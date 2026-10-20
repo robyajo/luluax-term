@@ -1,6 +1,6 @@
 {
   "name": "luluax-term",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Modern SSH & Terminal Client with Cloud Sync for Windows and macOS Apple Silicon",
   "main": "dist-electron/main.js",
   "scripts": {

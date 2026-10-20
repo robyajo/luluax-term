@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-21",
+  "type": "update",
+  "project": {
+    "name": "LuluaX-Term"
+  },
+  "title": {
+    "id": "Pembaruan Versi v1.0.2 — Fitur Auto-Update dan Peningkatan Stabilitas",
+    "en": "Version v1.0.2 Update — Auto-Update Integration and Stability Improvements"
+  },
+  "body": {
+    "id": "Rilis v1.0.2 menghadirkan integrasi auto-updater otomatis ke GitHub Releases, pembaruan in-place tanpa perlu uninstall, perbaikan penanganan server lokal, dan sinkronisasi cloud backend.",
+    "en": "Release v1.0.2 brings automated GitHub Releases auto-updater integration, seamless in-place upgrades without uninstallation, local server handling improvements, and cloud backend synchronization."
+  },
+  "items": [
+    {
+      "type": "update",
+      "id": "Integrasi Auto-Update: Notifikasi pembaruan otomatis saat rilis baru tersedia di GitHub.",
+      "en": "Auto-Update Integration: Automatic update notification when a new GitHub release is available."
+    },
+    {
+      "type": "improvement",
+      "id": "In-Place Upgrade: Pemasangan pembaruan versi baru langsung menimpa versi lama tanpa perlu uninstall manual.",
+      "en": "In-Place Upgrade: Installing a new version directly upgrades the existing installation without manual uninstallation."
+    },
+    {
+      "type": "fix",
+      "id": "Penyempurnaan Peluncuran Server: Server lokal otomatis terikat sebelum jendela antarmuka dimuat.",
+      "en": "Server Startup Refinement: Local backend server automatically binds before the UI window is loaded."
+    }
+  ]
+}
