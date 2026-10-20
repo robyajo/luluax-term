@@ -1,17 +1,18 @@
 {
   "name": "luluax-term",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Modern SSH & Terminal Client with Cloud Sync for Windows and macOS Apple Silicon",
-  "main": "electron-main.js",
+  "main": "dist-electron/main.js",
   "scripts": {
-    "start": "node server.js",
-    "dev:win": "dev-win.bat",
-    "dev:mac": "bash dev-mac.sh",
-    "dev:portable": "electron-builder --win portable --publish never",
-    "build:portable": "electron-builder --win portable --publish never",
-    "build:installer": "electron-builder --win nsis --publish never",
-    "build:mac-dmg": "electron-builder --mac dmg --arm64 --publish never",
-    "build:mac-app": "electron-builder --mac dir --arm64 --publish never",
+    "build": "tsc",
+    "start": "tsc && node dist-electron/server.js",
+    "dev:win": "tsc && dev-win.bat",
+    "dev:mac": "tsc && bash dev-mac.sh",
+    "dev:portable": "tsc && electron-builder --win portable --publish never",
+    "build:portable": "tsc && electron-builder --win portable --publish never",
+    "build:installer": "tsc && electron-builder --win nsis --publish never",
+    "build:mac-dmg": "tsc && electron-builder --mac dmg --arm64 --publish never",
+    "build:mac-app": "tsc && electron-builder --mac dir --arm64 --publish never",
     "build:win": "build-win.bat",
     "build:mac": "bash build-mac.sh"
   },
@@ -24,6 +25,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
     "dotenv": "^18.0.8",
+    "electron-updater": "^6.8.9",
     "express": "^5.3.0",
     "multer": "^2.4.0",
     "node-pty": "^1.1.0",
@@ -32,12 +34,23 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^26.6.5",
+    "@types/ssh2": "^1.15.6",
+    "@types/ws": "^8.18.2",
     "electron": "^44.9.2",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2"
   },
   "build": {
     "appId": "com.luluax.term",
     "productName": "LuluaX-Term",
+    "publish": {
+      "provider": "github",
+      "owner": "robyajo",
+      "repo": "luluax-term"
+    },
     "npmRebuild": false,
     "directories": {
       "output": "dist"

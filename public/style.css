@@ -1702,3 +1702,110 @@ input:checked + .slider:before {
   padding: 6px 8px;
   border-radius: var(--radius-sm);
 }
+
+.btn-logout-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 82, 82, 0.12);
+  border: 1px solid rgba(255, 82, 82, 0.35);
+  color: var(--danger);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-logout-pill:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------- */
+/* Auto-Update Banner & Modal Styles */
+/* ------------------------------------------------------------- */
+.update-banner {
+  background: linear-gradient(90deg, #312e81, #1e1b4b);
+  border-bottom: 1px solid #4338ca;
+  color: #fff;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10000;
+  position: relative;
+  font-size: 13px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+.update-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.update-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan);
+}
+
+.update-progress-bar {
+  width: 160px;
+  height: 6px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.update-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--success));
+  transition: width 0.2s ease;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-banner-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.btn-banner-close:hover {
+  color: #fff;
+}
+
+.update-notes-box {
+  background-color: #080a0f;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.update-notes-content {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #cbd5e1;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: inherit;
+}

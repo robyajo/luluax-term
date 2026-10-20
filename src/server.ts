@@ -1,23 +1,27 @@
-require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-const { WebSocketServer } = require('ws');
-const { Client: SSHClient } = require('ssh2');
-const pty = require('node-pty');
-const { v4: uuidv4 } = require('uuid');
-const multer = require('multer');
+import dotenv from 'dotenv';
+dotenv.config();
 
-const PORT = process.env.PORT || 3980;
+import express, { type Request, type Response } from 'express';
+import http from 'http';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import { WebSocketServer, WebSocket } from 'ws';
+import { Client as SSHClient, type ClientChannel, type SFTPWrapper } from 'ssh2';
+import pty, { type IPty } from 'node-pty';
+import { v4 as uuidv4 } from 'uuid';
+import multer from 'multer';
+import crypto from 'crypto';
+import type { HostItem, SnippetItem, TunnelItem, SshKeyItem, SettingsData, LocalFileEntry } from './types.js';
+
+const PORT: number = parseInt(process.env.PORT || '3980', 10);
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-function getWritableDataDir(appName, defaultDataPath) {
+function getWritableDataDir(appName: string, defaultDataPath: string): string {
   const isInsideAsar = __dirname.includes('.asar');
-  let targetDir;
+  let targetDir: string;
   if (isInsideAsar) {
     if (process.env.APPDATA) {
       targetDir = path.join(process.env.APPDATA, appName);
@@ -34,7 +38,6 @@ function getWritableDataDir(appName, defaultDataPath) {
     fs.mkdirSync(targetDir, { recursive: true });
   }
 
-  // Copy initial seed files from defaultDataPath into writable dir if needed
   if (fs.existsSync(defaultDataPath)) {
     try {
       const files = fs.readdirSync(defaultDataPath);
@@ -47,17 +50,18 @@ function getWritableDataDir(appName, defaultDataPath) {
           }
         }
       }
-    } catch (e) {
+    } catch {
       // ignore seed read warnings
     }
   }
   return targetDir;
 }
 
-const DATA_DIR = getWritableDataDir('LuluaX-Term', path.join(__dirname, 'data'));
+// In compiled TypeScript (dist-electron/server.js), project root is path.join(__dirname, '..')
+const PROJECT_ROOT = __dirname.includes('dist-electron') ? path.join(__dirname, '..') : __dirname;
+const DATA_DIR = getWritableDataDir('LuluaX-Term', path.join(PROJECT_ROOT, 'data'));
 
-// Helpers for JSON files
-function readData(file, defaultVal = []) {
+function readData<T>(file: string, defaultVal: T): T {
   const filePath = path.join(DATA_DIR, file);
   try {
     if (!fs.existsSync(filePath)) {
@@ -65,29 +69,31 @@ function readData(file, defaultVal = []) {
       return defaultVal;
     }
     const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content);
-  } catch (err) {
-    console.error(`Error reading ${file}:`, err.message);
+    return JSON.parse(content) as T;
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`Error reading ${file}:`, errorMsg);
     return defaultVal;
   }
 }
 
-function writeData(file, data) {
+function writeData<T>(file: string, data: T): boolean {
   const filePath = path.join(DATA_DIR, file);
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
     return true;
-  } catch (err) {
-    console.error(`Error writing ${file}:`, err.message);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`Error writing ${file}:`, errorMsg);
     return false;
   }
 }
 
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(PROJECT_ROOT, 'public')));
 
-// Upload configuration for SFTP
+// Upload buffer for SFTP
 const uploadDir = path.join(os.tmpdir(), 'luluax-term-uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -95,11 +101,11 @@ if (!fs.existsSync(uploadDir)) {
 const upload = multer({ dest: uploadDir });
 
 // -------------------------------------------------------------
-// System Info API (Detects Windows vs macOS Apple Silicon/Intel vs Linux)
+// System Info API
 // -------------------------------------------------------------
-app.get('/api/system', (req, res) => {
-  const platform = os.platform(); // 'win32', 'darwin', 'linux'
-  const arch = os.arch();         // 'arm64', 'x64'
+app.get('/api/system', (_req: Request, res: Response) => {
+  const platform = os.platform();
+  const arch = os.arch();
   let platformLabel = 'Unknown';
 
   if (platform === 'darwin') {
@@ -122,29 +128,30 @@ app.get('/api/system', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// REST APIs: Hosts
+// Hosts API
 // -------------------------------------------------------------
-app.get('/api/hosts', (req, res) => {
-  const hosts = readData('hosts.json', []);
+app.get('/api/hosts', (_req: Request, res: Response) => {
+  const hosts = readData<HostItem[]>('hosts.json', []);
   res.json({ success: true, hosts });
 });
 
-app.post('/api/hosts', (req, res) => {
-  const hosts = readData('hosts.json', []);
-  const newHost = {
-    id: req.body.id || uuidv4(),
-    label: req.body.label || 'New Host',
-    type: req.body.type || 'ssh', // 'ssh' or 'local'
-    hostname: req.body.hostname || '',
-    port: parseInt(req.body.port, 10) || 22,
-    username: req.body.username || '',
-    authType: req.body.authType || 'password', // 'password' or 'key'
-    password: req.body.password || '',
-    privateKey: req.body.privateKey || '',
-    passphrase: req.body.passphrase || '',
-    group: req.body.group || 'Default',
-    color: req.body.color || '#7b61ff',
-    shellType: req.body.shellType || (os.platform() === 'darwin' ? 'zsh' : 'powershell'),
+app.post('/api/hosts', (req: Request, res: Response) => {
+  const hosts = readData<HostItem[]>('hosts.json', []);
+  const body = req.body as Partial<HostItem>;
+  const newHost: HostItem = {
+    id: body.id || uuidv4(),
+    label: body.label || 'New Host',
+    type: body.type || 'ssh',
+    hostname: body.hostname || '',
+    port: parseInt(String(body.port || 22), 10) || 22,
+    username: body.username || '',
+    authType: body.authType || 'password',
+    password: body.password || '',
+    privateKey: body.privateKey || '',
+    passphrase: body.passphrase || '',
+    group: body.group || 'Default',
+    color: body.color || '#7b61ff',
+    shellType: body.shellType || (os.platform() === 'darwin' ? 'zsh' : 'powershell'),
     createdAt: Date.now(),
     lastConnected: null
   };
@@ -153,27 +160,28 @@ app.post('/api/hosts', (req, res) => {
   res.json({ success: true, host: newHost });
 });
 
-app.put('/api/hosts/:id', (req, res) => {
-  const hosts = readData('hosts.json', []);
+app.put('/api/hosts/:id', (req: Request, res: Response) => {
+  const hosts = readData<HostItem[]>('hosts.json', []);
   const index = hosts.findIndex(h => h.id === req.params.id);
   if (index === -1) {
     return res.status(404).json({ success: false, error: 'Host not found' });
   }
-  hosts[index] = { ...hosts[index], ...req.body, id: hosts[index].id };
+  hosts[index] = { ...hosts[index], ...(req.body as Partial<HostItem>), id: hosts[index].id };
   writeData('hosts.json', hosts);
   res.json({ success: true, host: hosts[index] });
 });
 
-app.delete('/api/hosts/:id', (req, res) => {
-  let hosts = readData('hosts.json', []);
+app.delete('/api/hosts/:id', (req: Request, res: Response) => {
+  let hosts = readData<HostItem[]>('hosts.json', []);
   hosts = hosts.filter(h => h.id !== req.params.id);
   writeData('hosts.json', hosts);
   res.json({ success: true });
 });
 
 // Test SSH connection
-app.post('/api/hosts/test', (req, res) => {
-  const { hostname, port, username, authType, password, privateKey, passphrase } = req.body;
+app.post('/api/hosts/test', (req: Request, res: Response) => {
+  const body = req.body as Partial<HostItem>;
+  const { hostname, port, username, authType, password, privateKey, passphrase } = body;
   if (!hostname || !username) {
     return res.status(400).json({ success: false, error: 'Host and username are required' });
   }
@@ -198,7 +206,7 @@ app.post('/api/hosts/test', (req, res) => {
     }
   });
 
-  conn.on('error', (err) => {
+  conn.on('error', (err: Error) => {
     if (!finished) {
       finished = true;
       clearTimeout(timer);
@@ -207,9 +215,9 @@ app.post('/api/hosts/test', (req, res) => {
   });
 
   try {
-    const config = {
+    const config: Record<string, unknown> = {
       host: hostname,
-      port: parseInt(port, 10) || 22,
+      port: parseInt(String(port || 22), 10) || 22,
       username,
       readyTimeout: 10000,
       keepaliveInterval: 10000
@@ -223,63 +231,54 @@ app.post('/api/hosts/test', (req, res) => {
     }
 
     conn.connect(config);
-  } catch (err) {
+  } catch (err: unknown) {
     if (!finished) {
       finished = true;
       clearTimeout(timer);
-      res.json({ success: false, error: err.message });
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      res.json({ success: false, error: errorMsg });
     }
   }
 });
 
 // -------------------------------------------------------------
-// REST APIs: Snippets
+// Snippets API
 // -------------------------------------------------------------
-app.get('/api/snippets', (req, res) => {
-  const snippets = readData('snippets.json', []);
+app.get('/api/snippets', (_req: Request, res: Response) => {
+  const snippets = readData<SnippetItem[]>('snippets.json', []);
   res.json({ success: true, snippets });
 });
 
-app.post('/api/snippets', (req, res) => {
-  const snippets = readData('snippets.json', []);
-  const newSnippet = {
-    id: req.body.id || uuidv4(),
-    title: req.body.title || 'Untitled Snippet',
-    description: req.body.description || '',
-    command: req.body.command || '',
-    category: req.body.category || 'General',
-    tags: req.body.tags || []
+app.post('/api/snippets', (req: Request, res: Response) => {
+  const snippets = readData<SnippetItem[]>('snippets.json', []);
+  const body = req.body as Partial<SnippetItem>;
+  const newSnippet: SnippetItem = {
+    id: body.id || uuidv4(),
+    title: body.title || 'Untitled Snippet',
+    description: body.description || '',
+    command: body.command || '',
+    category: body.category || 'General',
+    tags: Array.isArray(body.tags) ? body.tags : []
   };
   snippets.push(newSnippet);
   writeData('snippets.json', snippets);
   res.json({ success: true, snippet: newSnippet });
 });
 
-app.put('/api/snippets/:id', (req, res) => {
-  const snippets = readData('snippets.json', []);
-  const index = snippets.findIndex(s => s.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ success: false, error: 'Snippet not found' });
-  }
-  snippets[index] = { ...snippets[index], ...req.body, id: snippets[index].id };
-  writeData('snippets.json', snippets);
-  res.json({ success: true, snippet: snippets[index] });
-});
-
-app.delete('/api/snippets/:id', (req, res) => {
-  let snippets = readData('snippets.json', []);
+app.delete('/api/snippets/:id', (req: Request, res: Response) => {
+  let snippets = readData<SnippetItem[]>('snippets.json', []);
   snippets = snippets.filter(s => s.id !== req.params.id);
   writeData('snippets.json', snippets);
   res.json({ success: true });
 });
 
 // -------------------------------------------------------------
-// REST APIs: Settings
+// Settings API
 // -------------------------------------------------------------
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', (_req: Request, res: Response) => {
   const defaultUrl = process.env.CLOUD_API_URL || 'https://www.luluax-service.duckdns.org';
   const defaultKey = process.env.CLOUD_SYNC_KEY || '';
-  const settings = readData('settings.json', {
+  const settings = readData<SettingsData>('settings.json', {
     theme: 'termius-dark',
     fontFamily: "Consolas, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
     fontSize: 14,
@@ -293,35 +292,48 @@ app.get('/api/settings', (req, res) => {
   res.json({ success: true, settings });
 });
 
-app.post('/api/settings', (req, res) => {
-  const cur = readData('settings.json', {});
-  const updated = { ...cur, ...req.body };
+app.post('/api/settings', (req: Request, res: Response) => {
+  const cur = readData<SettingsData>('settings.json', {});
+  const updated = { ...cur, ...(req.body as SettingsData) };
   writeData('settings.json', updated);
   res.json({ success: true, settings: updated });
 });
 
 // -------------------------------------------------------------
-// Cloud Sync Integration APIs (Connects to Vercel Backend)
+// Cloud Sync Integration APIs
 // -------------------------------------------------------------
-app.post('/api/cloud/push', async (req, res) => {
-  const { cloudApiUrl, syncKey } = req.body;
+interface CloudPayload {
+  cloudApiUrl?: string;
+  syncKey?: string;
+}
+
+interface CloudPullResult {
+  success?: boolean;
+  error?: string;
+  data?: {
+    hosts?: HostItem[];
+    snippets?: SnippetItem[];
+    settings?: SettingsData;
+  };
+}
+
+app.post('/api/cloud/push', async (req: Request, res: Response) => {
+  const body: CloudPayload = req.body;
+  const cloudApiUrl = body.cloudApiUrl;
+  const syncKey = body.syncKey;
   if (!cloudApiUrl || !syncKey) {
     return res.status(400).json({ success: false, error: 'Cloud API URL and Sync Key are required' });
   }
 
-  const hosts = readData('hosts.json', []);
-  const snippets = readData('snippets.json', []);
-  const settings = readData('settings.json', {});
+  const hosts = readData<HostItem[]>('hosts.json', []);
+  const snippets = readData<SnippetItem[]>('snippets.json', []);
+  const settings = readData<SettingsData>('settings.json', {});
 
   const payload = {
     syncKey,
     device: `${os.hostname()} (${os.platform()} ${os.arch()})`,
     timestamp: Date.now(),
-    data: {
-      hosts,
-      snippets,
-      settings
-    }
+    data: { hosts, snippets, settings }
   };
 
   try {
@@ -335,7 +347,7 @@ app.post('/api/cloud/push', async (req, res) => {
       body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
+    const data = await response.json() as { success?: boolean; error?: string };
     if (!response.ok || !data.success) {
       return res.status(response.status).json({ success: false, error: data.error || 'Cloud sync failed' });
     }
@@ -344,17 +356,19 @@ app.post('/api/cloud/push', async (req, res) => {
     writeData('settings.json', settings);
 
     res.json({ success: true, message: 'Data pushed to cloud successfully!', timestamp: settings.lastCloudSync });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Cloud push network error: ' + err.message });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: 'Cloud push network error: ' + errorMsg });
   }
 });
 
-app.post('/api/cloud/pull', async (req, res) => {
-  const { cloudApiUrl, syncKey } = req.body;
+app.post('/api/cloud/pull', async (req: Request, res: Response) => {
+  const body: CloudPayload = req.body;
+  const cloudApiUrl = body.cloudApiUrl;
+  const syncKey = body.syncKey;
   if (!cloudApiUrl || !syncKey) {
     return res.status(400).json({ success: false, error: 'Cloud API URL and Sync Key are required' });
   }
-
   try {
     const targetUrl = cloudApiUrl.replace(/\/+$/, '') + '/api/sync/pull';
     const response = await fetch(targetUrl, {
@@ -366,43 +380,51 @@ app.post('/api/cloud/pull', async (req, res) => {
       body: JSON.stringify({ syncKey })
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as CloudPullResult;
     if (!response.ok || !data.success) {
       return res.status(response.status).json({ success: false, error: data.error || 'Cloud pull failed' });
     }
 
     if (data.data) {
-      if (Array.isArray(data.data.hosts)) {
-        writeData('hosts.json', data.data.hosts);
-      }
-      if (Array.isArray(data.data.snippets)) {
-        writeData('snippets.json', data.data.snippets);
-      }
+      if (Array.isArray(data.data.hosts)) writeData('hosts.json', data.data.hosts);
+      if (Array.isArray(data.data.snippets)) writeData('snippets.json', data.data.snippets);
       if (data.data.settings && typeof data.data.settings === 'object') {
-        const localSettings = readData('settings.json', {});
+        const localSettings = readData<SettingsData>('settings.json', {});
         const mergedSettings = { ...localSettings, ...data.data.settings, lastCloudSync: Date.now() };
         writeData('settings.json', mergedSettings);
       }
     }
 
-    res.json({
-      success: true,
-      message: 'Data pulled from cloud and updated locally!',
-      timestamp: Date.now()
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Cloud pull network error: ' + err.message });
+    res.json({ success: true, message: 'Data pulled from cloud and updated locally!', timestamp: Date.now() });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: 'Cloud pull network error: ' + errorMsg });
   }
 });
 
 // -------------------------------------------------------------
 // SFTP Client Sessions Store
 // -------------------------------------------------------------
-const sftpClients = new Map(); // sessionId -> { conn, sftp, hostId, connectedAt }
+interface SftpWrapper {
+  readdir: (targetPath: string, callback: (err: Error | null, list: Array<{ filename: string; attrs: { mode: number; size: number; mtime: number } }>) => void) => void;
+  mkdir: (dirPath: string, callback: (err: Error | null) => void) => void;
+  rmdir: (dirPath: string, callback: (err: Error | null) => void) => void;
+  unlink: (filePath: string, callback: (err: Error | null) => void) => void;
+  createReadStream: (filePath: string) => NodeJS.ReadableStream;
+  createWriteStream: (filePath: string) => NodeJS.WritableStream;
+}
 
-app.post('/api/sftp/connect', (req, res) => {
-  const { hostId } = req.body;
-  const hosts = readData('hosts.json', []);
+interface SftpSession {
+  conn: SSHClient;
+  sftp: SftpWrapper;
+  hostId: string;
+  connectedAt: number;
+}
+const sftpClients = new Map<string, SftpSession>();
+
+app.post('/api/sftp/connect', (req: Request, res: Response) => {
+  const { hostId } = req.body as { hostId?: string };
+  const hosts = readData<HostItem[]>('hosts.json', []);
   const host = hosts.find(h => h.id === hostId);
   if (!host || host.type !== 'ssh') {
     return res.status(400).json({ success: false, error: 'Valid SSH host required' });
@@ -412,22 +434,22 @@ app.post('/api/sftp/connect', (req, res) => {
   const conn = new SSHClient();
 
   conn.on('ready', () => {
-    conn.sftp((err, sftp) => {
+    conn.sftp((err: Error | undefined, sftp: SFTPWrapper) => {
       if (err) {
         conn.end();
         return res.status(500).json({ success: false, error: 'Failed to initialize SFTP: ' + err.message });
       }
-      sftpClients.set(sessionId, { conn, sftp, hostId, connectedAt: Date.now() });
+      sftpClients.set(sessionId, { conn, sftp: sftp as unknown as SftpWrapper, hostId: host.id, connectedAt: Date.now() });
       res.json({ success: true, sessionId, initialPath: '/home/' + host.username });
     });
   });
 
-  conn.on('error', (err) => {
+  conn.on('error', (err: Error) => {
     res.status(500).json({ success: false, error: err.message || 'SSH connection failed' });
   });
 
   try {
-    const config = {
+    const config: Record<string, unknown> = {
       host: host.hostname,
       port: host.port || 22,
       username: host.username,
@@ -441,34 +463,29 @@ app.post('/api/sftp/connect', (req, res) => {
       config.password = host.password || '';
     }
     conn.connect(config);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: errorMsg });
   }
 });
 
-app.post('/api/sftp/list', (req, res) => {
-  const { sessionId, path: dirPath } = req.body;
+app.post('/api/sftp/list', (req: Request, res: Response) => {
+  const { sessionId, path: dirPath } = req.body as { sessionId?: string; path?: string };
+  if (!sessionId) return res.status(400).json({ success: false, error: 'Session ID required' });
   const session = sftpClients.get(sessionId);
-  if (!session) {
-    return res.status(401).json({ success: false, error: 'SFTP session expired or not found' });
-  }
+  if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired or not found' });
 
   const targetPath = dirPath || '.';
-  session.sftp.readdir(targetPath, (err, list) => {
-    if (err) {
-      return res.status(500).json({ success: false, error: err.message });
-    }
+  session.sftp.readdir(targetPath, (err: Error | null, list: Array<{ filename: string; attrs: { mode: number; size: number; mtime: number } }>) => {
+    if (err) return res.status(500).json({ success: false, error: err.message });
 
-    const items = list.map(item => {
-      const isDir = (item.attrs.mode & 0o40000) !== 0;
-      return {
-        name: item.filename,
-        size: item.attrs.size,
-        modifyTime: item.attrs.mtime * 1000,
-        isDirectory: isDir,
-        permissions: (item.attrs.mode & 0o777).toString(8)
-      };
-    });
+    const items = list.map(item => ({
+      name: item.filename,
+      size: item.attrs.size,
+      modifyTime: item.attrs.mtime * 1000,
+      isDirectory: (item.attrs.mode & 0o40000) !== 0,
+      permissions: (item.attrs.mode & 0o777).toString(8)
+    }));
 
     items.sort((a, b) => {
       if (a.isDirectory && !b.isDirectory) return -1;
@@ -480,115 +497,59 @@ app.post('/api/sftp/list', (req, res) => {
   });
 });
 
-app.post('/api/sftp/mkdir', (req, res) => {
-  const { sessionId, dirPath } = req.body;
+app.post('/api/sftp/mkdir', (req: Request, res: Response) => {
+  const { sessionId, dirPath } = req.body as { sessionId?: string; dirPath?: string };
+  if (!sessionId || !dirPath) return res.status(400).json({ success: false, error: 'Missing parameters' });
   const session = sftpClients.get(sessionId);
   if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired' });
 
-  session.sftp.mkdir(dirPath, (err) => {
+  session.sftp.mkdir(dirPath, (err: Error | null) => {
     if (err) return res.status(500).json({ success: false, error: err.message });
     res.json({ success: true });
   });
 });
 
-app.post('/api/sftp/delete', (req, res) => {
-  const { sessionId, path: targetPath, isDirectory } = req.body;
+app.post('/api/sftp/delete', (req: Request, res: Response) => {
+  const { sessionId, path: targetPath, isDirectory } = req.body as { sessionId?: string; path?: string; isDirectory?: boolean };
+  if (!sessionId || !targetPath) return res.status(400).json({ success: false, error: 'Missing parameters' });
   const session = sftpClients.get(sessionId);
   if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired' });
 
   if (isDirectory) {
-    session.sftp.rmdir(targetPath, (err) => {
+    session.sftp.rmdir(targetPath, (err: Error | null) => {
       if (err) return res.status(500).json({ success: false, error: err.message });
       res.json({ success: true });
     });
   } else {
-    session.sftp.unlink(targetPath, (err) => {
+    session.sftp.unlink(targetPath, (err: Error | null) => {
       if (err) return res.status(500).json({ success: false, error: err.message });
       res.json({ success: true });
     });
   }
 });
 
-app.get('/api/sftp/download', (req, res) => {
-  const { sessionId, remotePath } = req.query;
-  const session = sftpClients.get(sessionId);
-  if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired' });
-
-  const fileName = path.basename(remotePath);
-  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-  res.setHeader('Content-Type', 'application/octet-stream');
-
-  const readStream = session.sftp.createReadStream(remotePath);
-  readStream.on('error', (err) => {
-    if (!res.headersSent) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-  readStream.pipe(res);
-});
-
-app.post('/api/sftp/upload', upload.single('file'), (req, res) => {
-  const { sessionId, remotePath } = req.body;
-  const file = req.file;
-  if (!file) return res.status(400).json({ success: false, error: 'No file uploaded' });
-
-  const session = sftpClients.get(sessionId);
-  if (!session) {
-    fs.unlinkSync(file.path);
-    return res.status(401).json({ success: false, error: 'SFTP session expired' });
-  }
-
-  const destination = path.posix.join(remotePath, file.originalname);
-  const writeStream = session.sftp.createWriteStream(destination);
-  const readStream = fs.createReadStream(file.path);
-
-  writeStream.on('close', () => {
-    fs.unlinkSync(file.path);
-    res.json({ success: true, path: destination });
-  });
-
-  writeStream.on('error', (err) => {
-    fs.unlinkSync(file.path);
-    res.status(500).json({ success: false, error: err.message });
-  });
-
-  readStream.pipe(writeStream);
-});
-
-app.post('/api/sftp/disconnect', (req, res) => {
-  const { sessionId } = req.body;
-  const session = sftpClients.get(sessionId);
-  if (session) {
-    session.conn.end();
-    sftpClients.delete(sessionId);
-  }
-  res.json({ success: true });
-});
-
 // -------------------------------------------------------------
-// Termius Feature 1: Dual-Pane SFTP (Local Filesystem Explorer)
+// Dual-Pane SFTP: Local Filesystem Explorer
 // -------------------------------------------------------------
-app.get('/api/local/drives', (req, res) => {
+app.get('/api/local/drives', (_req: Request, res: Response) => {
   if (os.platform() === 'win32') {
     const candidateDrives = ['C:', 'D:', 'E:', 'F:', 'G:'];
-    const existing = [];
+    const existing: string[] = [];
     for (const d of candidateDrives) {
       try {
-        if (fs.existsSync(d + '\\')) {
-          existing.push(d + '\\');
-        }
-      } catch (e) {}
+        if (fs.existsSync(d + '\\')) existing.push(d + '\\');
+      } catch {}
     }
     return res.json({ success: true, drives: existing.length > 0 ? existing : ['C:\\'], defaultPath: os.homedir() });
   }
   return res.json({ success: true, drives: ['/'], defaultPath: os.homedir() });
 });
 
-app.post('/api/local/list', (req, res) => {
-  const targetPath = req.body.path || os.homedir();
+app.post('/api/local/list', (req: Request, res: Response) => {
+  const targetPath = (req.body as { path?: string }).path || os.homedir();
   try {
     const entries = fs.readdirSync(targetPath, { withFileTypes: true });
-    const items = [];
+    const items: LocalFileEntry[] = [];
 
     for (const ent of entries) {
       try {
@@ -601,9 +562,7 @@ app.post('/api/local/list', (req, res) => {
           modifyTime: stat.mtimeMs,
           fullPath
         });
-      } catch (e) {
-        // ignore permission errors on system files
-      }
+      } catch {}
     }
 
     items.sort((a, b) => {
@@ -613,14 +572,15 @@ app.post('/api/local/list', (req, res) => {
     });
 
     res.json({ success: true, path: targetPath, items });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: errorMsg });
   }
 });
 
-// Direct Dual-Pane Transfers (Local to Remote and Remote to Local)
-app.post('/api/sftp/transfer-local-to-remote', (req, res) => {
-  const { sessionId, localFilePath, remoteDirPath } = req.body;
+app.post('/api/sftp/transfer-local-to-remote', (req: Request, res: Response) => {
+  const { sessionId, localFilePath, remoteDirPath } = req.body as { sessionId?: string; localFilePath?: string; remoteDirPath?: string };
+  if (!sessionId || !localFilePath || !remoteDirPath) return res.status(400).json({ success: false, error: 'Missing parameters' });
   const session = sftpClients.get(sessionId);
   if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired' });
   if (!fs.existsSync(localFilePath)) return res.status(400).json({ success: false, error: 'Local file does not exist' });
@@ -632,12 +592,13 @@ app.post('/api/sftp/transfer-local-to-remote', (req, res) => {
   const writeStream = session.sftp.createWriteStream(destination);
 
   writeStream.on('close', () => res.json({ success: true, path: destination }));
-  writeStream.on('error', (err) => res.status(500).json({ success: false, error: err.message }));
+  writeStream.on('error', (err: Error) => res.status(500).json({ success: false, error: err.message }));
   readStream.pipe(writeStream);
 });
 
-app.post('/api/sftp/transfer-remote-to-local', (req, res) => {
-  const { sessionId, remoteFilePath, localDirPath } = req.body;
+app.post('/api/sftp/transfer-remote-to-local', (req: Request, res: Response) => {
+  const { sessionId, remoteFilePath, localDirPath } = req.body as { sessionId?: string; remoteFilePath?: string; localDirPath?: string };
+  if (!sessionId || !remoteFilePath || !localDirPath) return res.status(400).json({ success: false, error: 'Missing parameters' });
   const session = sftpClients.get(sessionId);
   if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired' });
 
@@ -648,47 +609,62 @@ app.post('/api/sftp/transfer-remote-to-local', (req, res) => {
   const writeStream = fs.createWriteStream(destination);
 
   writeStream.on('close', () => res.json({ success: true, path: destination }));
-  writeStream.on('error', (err) => res.status(500).json({ success: false, error: err.message }));
+  writeStream.on('error', (err: Error) => res.status(500).json({ success: false, error: err.message }));
   readStream.pipe(writeStream);
 });
 
 // -------------------------------------------------------------
-// Termius Feature 2: SSH Key Vault Manager
+// Tunnels & Keys APIs
 // -------------------------------------------------------------
-app.get('/api/keys', (req, res) => {
-  const keys = readData('keys.json', []);
-  res.json({ success: true, keys });
+app.get('/api/tunnels', (_req: Request, res: Response) => {
+  const tunnels = readData<TunnelItem[]>('tunnels.json', []);
+  res.json({ success: true, tunnels });
 });
 
-app.post('/api/keys', (req, res) => {
-  const keys = readData('keys.json', []);
-  const newKey = {
-    id: req.body.id || `key_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    label: req.body.label || 'New Key',
-    keyType: req.body.keyType || 'ed25519',
-    publicKey: req.body.publicKey || '',
-    privateKey: req.body.privateKey || '',
-    passphrase: req.body.passphrase || '',
+app.post('/api/tunnels', (req: Request, res: Response) => {
+  const tunnels = readData<TunnelItem[]>('tunnels.json', []);
+  const body = req.body as Partial<TunnelItem>;
+  const newTunnel: TunnelItem = {
+    id: body.id || `tun_${Date.now()}`,
+    label: body.label || 'New Tunnel',
+    hostId: body.hostId || '',
+    tunnelType: body.tunnelType || 'local',
+    localPort: Number(body.localPort || 8080),
+    remoteHost: body.remoteHost || '127.0.0.1',
+    remotePort: Number(body.remotePort || 80),
+    enabled: Boolean(body.enabled),
     createdAt: Date.now()
   };
-  keys.push(newKey);
-  writeData('keys.json', keys);
-  res.json({ success: true, key: newKey });
+  tunnels.push(newTunnel);
+  writeData('tunnels.json', tunnels);
+  res.json({ success: true, tunnel: newTunnel });
 });
 
-app.delete('/api/keys/:id', (req, res) => {
-  let keys = readData('keys.json', []);
-  keys = keys.filter(k => k.id !== req.params.id);
-  writeData('keys.json', keys);
+app.post('/api/tunnels/:id/toggle', (req: Request, res: Response) => {
+  const tunnels = readData<TunnelItem[]>('tunnels.json', []);
+  const tunnel = tunnels.find(t => t.id === req.params.id);
+  if (!tunnel) return res.status(404).json({ success: false, error: 'Tunnel not found' });
+  tunnel.enabled = !tunnel.enabled;
+  writeData('tunnels.json', tunnels);
+  res.json({ success: true, enabled: tunnel.enabled });
+});
+
+app.delete('/api/tunnels/:id', (req: Request, res: Response) => {
+  let tunnels = readData<TunnelItem[]>('tunnels.json', []);
+  tunnels = tunnels.filter(t => t.id !== req.params.id);
+  writeData('tunnels.json', tunnels);
   res.json({ success: true });
 });
 
-app.post('/api/keys/generate', (req, res) => {
-  const { keyType = 'ed25519', label = 'Generated Key' } = req.body;
-  try {
-    const crypto = require('crypto');
-    let publicKey, privateKey;
+app.get('/api/keys', (_req: Request, res: Response) => {
+  const keys = readData<SshKeyItem[]>('keys.json', []);
+  res.json({ success: true, keys });
+});
 
+app.post('/api/keys/generate', (req: Request, res: Response) => {
+  const { keyType = 'ed25519', label = 'Generated Key' } = req.body as { keyType?: 'ed25519' | 'rsa'; label?: string };
+  try {
+    let publicKey: string, privateKey: string;
     if (keyType === 'ed25519') {
       const pair = crypto.generateKeyPairSync('ed25519', {
         publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -706,8 +682,8 @@ app.post('/api/keys/generate', (req, res) => {
       privateKey = pair.privateKey;
     }
 
-    const keys = readData('keys.json', []);
-    const newKey = {
+    const keys = readData<SshKeyItem[]>('keys.json', []);
+    const newKey: SshKeyItem = {
       id: `key_${Date.now()}`,
       label,
       keyType,
@@ -717,68 +693,19 @@ app.post('/api/keys/generate', (req, res) => {
     };
     keys.push(newKey);
     writeData('keys.json', keys);
-
     res.json({ success: true, key: newKey });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: errorMsg });
   }
 });
 
 // -------------------------------------------------------------
-// Termius Feature 3: Port Forwarding / Tunnels
+// WebSocket Terminal Streaming
 // -------------------------------------------------------------
-app.get('/api/tunnels', (req, res) => {
-  const tunnels = readData('tunnels.json', []);
-  res.json({ success: true, tunnels });
-});
-
-app.post('/api/tunnels', (req, res) => {
-  const tunnels = readData('tunnels.json', []);
-  const newTunnel = {
-    id: req.body.id || `tun_${Date.now()}`,
-    label: req.body.label || 'New Tunnel',
-    hostId: req.body.hostId || '',
-    tunnelType: req.body.tunnelType || 'local',
-    localPort: Number(req.body.localPort || 8080),
-    remoteHost: req.body.remoteHost || '127.0.0.1',
-    remotePort: Number(req.body.remotePort || 80),
-    enabled: Boolean(req.body.enabled),
-    createdAt: Date.now()
-  };
-  tunnels.push(newTunnel);
-  writeData('tunnels.json', tunnels);
-  res.json({ success: true, tunnel: newTunnel });
-});
-
-app.post('/api/tunnels/:id/toggle', (req, res) => {
-  const tunnels = readData('tunnels.json', []);
-  const tunnel = tunnels.find(t => t.id === req.params.id);
-  if (!tunnel) return res.status(404).json({ success: false, error: 'Tunnel not found' });
-
-  tunnel.enabled = !tunnel.enabled;
-  writeData('tunnels.json', tunnels);
-  res.json({ success: true, enabled: tunnel.enabled });
-});
-
-app.delete('/api/tunnels/:id', (req, res) => {
-  let tunnels = readData('tunnels.json', []);
-  tunnels = tunnels.filter(t => t.id !== req.params.id);
-  writeData('tunnels.json', tunnels);
-  res.json({ success: true });
-});
-
-// -------------------------------------------------------------
-// Cross-Platform WebSocket Terminal Streaming (Windows & macOS Apple Silicon)
-// -------------------------------------------------------------
-function resolveLocalShell(shellType) {
-  const isMac = os.platform() === 'darwin';
-  const isWin = os.platform() === 'win32';
-
-  if (isMac) {
-    // macOS Apple Silicon (arm64) / Intel (x64)
-    if (shellType === 'bash') {
-      if (fs.existsSync('/bin/bash')) return '/bin/bash';
-    }
+function resolveLocalShell(shellType?: string): string {
+  if (os.platform() === 'darwin') {
+    if (shellType === 'bash' && fs.existsSync('/bin/bash')) return '/bin/bash';
     if (shellType === 'fish') {
       if (fs.existsSync('/opt/homebrew/bin/fish')) return '/opt/homebrew/bin/fish';
       if (fs.existsSync('/usr/local/bin/fish')) return '/usr/local/bin/fish';
@@ -787,13 +714,10 @@ function resolveLocalShell(shellType) {
     return process.env.SHELL || '/bin/zsh';
   }
 
-  if (isWin) {
+  if (os.platform() === 'win32') {
     if (shellType === 'cmd') return 'cmd.exe';
     if (shellType === 'gitbash') {
-      const candidates = [
-        'C:\\Program Files\\Git\\bin\\bash.exe',
-        'C:\\Program Files (x86)\\Git\\bin\\bash.exe'
-      ];
+      const candidates = ['C:\\Program Files\\Git\\bin\\bash.exe', 'C:\\Program Files (x86)\\Git\\bin\\bash.exe'];
       for (const c of candidates) {
         if (fs.existsSync(c)) return c;
       }
@@ -803,154 +727,100 @@ function resolveLocalShell(shellType) {
     return 'powershell.exe';
   }
 
-  // Linux default
   return process.env.SHELL || '/bin/bash';
 }
 
-wss.on('connection', (ws) => {
-  let terminalSession = null; // { type: 'local' | 'ssh', pty, stream, conn }
+interface ActiveTerminalSession {
+  type: 'local' | 'ssh';
+  pty?: IPty;
+  conn?: SSHClient;
+  stream?: ClientChannel;
+}
 
-  ws.on('message', (msg) => {
+wss.on('connection', (ws: WebSocket) => {
+  let terminalSession: ActiveTerminalSession | null = null;
+
+  ws.on('message', (msg: string) => {
     try {
-      const data = JSON.parse(msg);
+      const data = JSON.parse(msg) as { type: string; hostId?: string; cols?: number; rows?: number; data?: string };
 
       if (data.type === 'init') {
         const { hostId, cols = 80, rows = 24 } = data;
-        const hosts = readData('hosts.json', []);
+        const hosts = readData<HostItem[]>('hosts.json', []);
         const host = hosts.find(h => h.id === hostId);
 
         if (!host) {
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: `Host with ID "${hostId}" not found`
-          }));
+          ws.send(JSON.stringify({ type: 'error', message: `Host "${hostId}" not found` }));
           return;
         }
 
-        // Update lastConnected timestamp
         host.lastConnected = Date.now();
         writeData('hosts.json', hosts);
 
         if (host.type === 'local') {
-          // Spawn local PTY (Windows ConPTY / macOS Apple Silicon PTY)
           const shellExe = resolveLocalShell(host.shellType);
           const cwd = process.env.USERPROFILE || process.env.HOME || process.cwd();
-
           const ptyProcess = pty.spawn(shellExe, [], {
             name: 'xterm-256color',
-            cols: cols || 80,
-            rows: rows || 24,
-            cwd: cwd,
-            env: process.env
+            cols,
+            rows,
+            cwd,
+            env: process.env as Record<string, string>
           });
 
-          terminalSession = {
-            type: 'local',
-            pty: ptyProcess
-          };
+          terminalSession = { type: 'local', pty: ptyProcess };
 
-          ptyProcess.onData((chunk) => {
-            if (ws.readyState === ws.OPEN) {
-              ws.send(JSON.stringify({ type: 'data', data: chunk }));
+          ptyProcess.onData((chunk: string) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'data', data: chunk }));
+          });
+
+          ptyProcess.onExit(({ exitCode }) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'status', status: 'disconnected', message: `Process exited with code ${exitCode}` }));
             }
           });
 
-          ptyProcess.onExit(({ exitCode, signal }) => {
-            if (ws.readyState === ws.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'status',
-                status: 'disconnected',
-                message: `Process exited with code ${exitCode}`
-              }));
-            }
-          });
-
-          ws.send(JSON.stringify({
-            type: 'status',
-            status: 'connected',
-            message: `Started local shell: ${host.label} (${shellExe})`
-          }));
+          ws.send(JSON.stringify({ type: 'status', status: 'connected', message: `Started ${host.label} (${shellExe})` }));
 
         } else if (host.type === 'ssh') {
-          // Connect via SSH2
           const conn = new SSHClient();
-
-          ws.send(JSON.stringify({
-            type: 'status',
-            status: 'connecting',
-            message: `Connecting to ${host.username}@${host.hostname}:${host.port || 22}...`
-          }));
+          ws.send(JSON.stringify({ type: 'status', status: 'connecting', message: `Connecting to ${host.username}@${host.hostname}...` }));
 
           conn.on('ready', () => {
-            conn.shell({
-              term: 'xterm-256color',
-              cols: cols || 80,
-              rows: rows || 24
-            }, (err, stream) => {
+            conn.shell({ term: 'xterm-256color', cols, rows }, (err: Error | undefined, stream: ClientChannel) => {
               if (err) {
                 ws.send(JSON.stringify({ type: 'error', message: 'Shell init error: ' + err.message }));
                 conn.end();
                 return;
               }
 
-              terminalSession = {
-                type: 'ssh',
-                conn,
-                stream
-              };
+              terminalSession = { type: 'ssh', conn, stream };
 
-              stream.on('data', (chunk) => {
-                if (ws.readyState === ws.OPEN) {
-                  ws.send(JSON.stringify({ type: 'data', data: chunk.toString('utf-8') }));
-                }
+              stream.on('data', (chunk: Buffer) => {
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'data', data: chunk.toString('utf-8') }));
               });
 
               stream.on('close', () => {
                 conn.end();
-                if (ws.readyState === ws.OPEN) {
-                  ws.send(JSON.stringify({
-                    type: 'status',
-                    status: 'disconnected',
-                    message: 'SSH session closed.'
-                  }));
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: 'status', status: 'disconnected', message: 'SSH session closed.' }));
                 }
               });
 
-              ws.send(JSON.stringify({
-                type: 'status',
-                status: 'connected',
-                message: `Connected to ${host.username}@${host.hostname}`
-              }));
+              ws.send(JSON.stringify({ type: 'status', status: 'connected', message: `Connected to ${host.username}@${host.hostname}` }));
             });
           });
 
-          conn.on('error', (err) => {
-            if (ws.readyState === ws.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'error',
-                message: `SSH Connection Error: ${err.message}`
-              }));
-              ws.send(JSON.stringify({
-                type: 'status',
-                status: 'error',
-                message: err.message
-              }));
+          conn.on('error', (err: Error) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'error', message: `SSH Error: ${err.message}` }));
+              ws.send(JSON.stringify({ type: 'status', status: 'error', message: err.message }));
             }
           });
 
-          conn.on('end', () => {
-            if (ws.readyState === ws.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'status',
-                status: 'disconnected',
-                message: 'SSH Connection ended.'
-              }));
-            }
-          });
-
-          const sshConfig = {
+          const sshConfig: Record<string, unknown> = {
             host: host.hostname,
-            port: parseInt(host.port, 10) || 22,
+            port: parseInt(String(host.port || 22), 10) || 22,
             username: host.username,
             readyTimeout: 15000,
             keepaliveInterval: 10000
@@ -966,7 +836,7 @@ wss.on('connection', (ws) => {
           conn.connect(sshConfig);
         }
 
-      } else if (data.type === 'data') {
+      } else if (data.type === 'data' && data.data) {
         if (terminalSession) {
           if (terminalSession.type === 'local' && terminalSession.pty) {
             terminalSession.pty.write(data.data);
@@ -974,29 +844,27 @@ wss.on('connection', (ws) => {
             terminalSession.stream.write(data.data);
           }
         }
-
-      } else if (data.type === 'resize') {
-        const { cols, rows } = data;
+      } else if (data.type === 'resize' && data.cols && data.rows) {
         if (terminalSession) {
           if (terminalSession.type === 'local' && terminalSession.pty) {
-            terminalSession.pty.resize(cols, rows);
+            terminalSession.pty.resize(data.cols, data.rows);
           } else if (terminalSession.type === 'ssh' && terminalSession.stream) {
-            terminalSession.stream.setWindow(rows, cols, 0, 0);
+            terminalSession.stream.setWindow(data.rows, data.cols, 0, 0);
           }
         }
       }
-
-    } catch (e) {
-      console.error('WebSocket message parsing error:', e.message);
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.error('WebSocket parse error:', errorMsg);
     }
   });
 
   ws.on('close', () => {
     if (terminalSession) {
       if (terminalSession.type === 'local' && terminalSession.pty) {
-        try { terminalSession.pty.kill(); } catch (err) {}
+        try { terminalSession.pty.kill(); } catch {}
       } else if (terminalSession.type === 'ssh' && terminalSession.conn) {
-        try { terminalSession.conn.end(); } catch (err) {}
+        try { terminalSession.conn.end(); } catch {}
       }
       terminalSession = null;
     }
@@ -1004,13 +872,8 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  const platform = os.platform();
-  const arch = os.arch();
-  const isMacSilicon = platform === 'darwin' && arch === 'arm64';
-
   console.log(`\n======================================================`);
   console.log(`         LuluaX-Term SSH & Terminal Manager           `);
-  console.log(`  System: ${platform} ${arch} ${isMacSilicon ? '(Apple Silicon M-Series)' : ''}`);
   console.log(`  Local URL: http://127.0.0.1:${PORT}                  `);
   console.log(`======================================================\n`);
 });

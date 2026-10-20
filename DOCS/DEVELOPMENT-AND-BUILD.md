@@ -58,3 +58,36 @@ chmod +x build-mac.sh
 ./build-mac.sh --universal  # Opsi untuk installer Universal
 ```
 - Menghasilkan file installer Apple Disk Image (**`.dmg`**). Pengguna cukup melakukan drag-and-drop ikon aplikasi ke folder `/Applications`.
+
+---
+
+## 4. Alur Integrasi Auto-Update (GitHub Releases & electron-updater)
+
+Aplikasi telah terintegrasi penuh dengan sistem pembaruan otomatis:
+
+```
+[ Rilis Baru di GitHub ] ➔ [ electron-updater mendeteksi ] ➔ [ Banner: Download Pembaruan ]
+                                                                           │
+                                                                           ▼
+[ Modal Informasi: Release Notes ]  [ Unduhan Selesai ]  [ Progress Bar Unduh ]
+                 │
+                 ▼
+[ Tombol: Restart & Pasang Sekarang ] ➔ [ Aplikasi Terupdate Otomatis! ]
+```
+
+### Cara Menerbitkan Rilis Baru ke GitHub (Publish):
+1. Siapkan Personal Access Token GitHub (dengan scope `repo`).
+2. Set token di terminal:
+   ```bash
+   export GH_TOKEN="ghp_your_github_token_here"       # macOS / Linux
+   set GH_TOKEN=ghp_your_github_token_here            # Windows
+   ```
+3. Jalankan skrip publish:
+   ```bash
+   # Di macOS
+   ./publish.sh
+
+   # Di Windows
+   publish.bat
+   ```
+   *Skrip otomatis memaketkan installer, menghasilkan `latest.yml`, dan mengunggahnya ke GitHub Releases `robyajo/luluax-term`. Pengguna yang sedang membuka aplikasi akan otomatis menerima banner notifikasi pembaruan beserta catatan rilis (release notes).*
