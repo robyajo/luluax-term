@@ -5,12 +5,15 @@
   "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
-    "dev:mac": "bash dev-mac.sh",
-    "build:mac": "bash build-mac.sh",
     "dev:win": "dev-win.bat",
+    "dev:mac": "bash dev-mac.sh",
+    "dev:portable": "electron-builder --win portable --publish never",
+    "build:portable": "electron-builder --win portable --publish never",
+    "build:installer": "electron-builder --win nsis --publish never",
+    "build:mac-dmg": "electron-builder --mac dmg --arm64 --publish never",
+    "build:mac-app": "electron-builder --mac dir --arm64 --publish never",
     "build:win": "build-win.bat",
-    "build:mac-arm64": "electron-builder --mac --arm64",
-    "build:win-exe": "electron-builder --win portable"
+    "build:mac": "bash build-mac.sh"
   },
   "keywords": [],
   "author": "",
@@ -41,9 +44,24 @@
     },
     "win": {
       "target": [
-        "portable",
-        "dir"
+        "nsis",
+        "portable"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LuluaX-Term",
+      "uninstallDisplayName": "LuluaX-Term Uninstall"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
     },
     "asarUnpack": [
       "**/node-pty/**"

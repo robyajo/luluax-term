@@ -46,11 +46,11 @@ echo -e "${GREEN}✓ Target Architecture: macOS ${TARGET_ARCH}${NC}"
 echo -e "${CYAN}Starting electron-builder packaging...${NC}\n"
 
 if [ "$TARGET_ARCH" = "universal" ]; then
-    npx electron-builder --mac --universal
+    npx electron-builder --mac --universal --publish never
 elif [ "$TARGET_ARCH" = "arm64" ]; then
-    npx electron-builder --mac --arm64
+    npx electron-builder --mac --arm64 --publish never
 else
-    npx electron-builder --mac --x64
+    npx electron-builder --mac --x64 --publish never
 fi
 
 echo -e "\n${GREEN}======================================================${NC}"
