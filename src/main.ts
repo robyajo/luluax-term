@@ -2,6 +2,11 @@ import { app, BrowserWindow, dialog, type MessageBoxReturnValue } from 'electron
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from 'electron-updater';
 import * as path from 'path';
 
+// Start the local backend server in-process
+import './server.js';
+
+const PORT = 3980;
+
 // Konfigurasi Logging bawaan
 autoUpdater.logger = console;
 
@@ -27,30 +32,46 @@ function createWindow(): void {
     }
   });
 
-  // Muat URL server lokal aplikasi
-  mainWindow.loadURL('http://127.0.0.1:3980');
+  const loadApp = (): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(`http://127.0.0.1:${PORT}`);
+    }
+  };
+
+  // Tunggu sebentar hingga port server lokal siap bind socket
+  setTimeout(loadApp, 500);
+
+  // Jika koneksi awal gagal (misal server butuh waktu inisialisasi), auto-retry
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode) => {
+    if (errorCode !== -3) {
+      setTimeout(loadApp, 800);
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdates().catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn('[AutoUpdater] Pengecekan otomatis saat startup gagal:', message);
+      });
+    }
+  });
 }
 
-/**
- * Konfigurasi Event Listener Auto-Updater (electron-updater)
- */
 function setupAutoUpdater(): void {
-  // 1. Event: Memulai pemeriksaan pembaruan
   autoUpdater.on('checking-for-update', () => {
     console.log('[AutoUpdater] Sedang memeriksa rilis terbaru di GitHub Releases...');
   });
 
-  // 2. Event: Pembaruan tersedia di GitHub
   autoUpdater.on('update-available', async (info: UpdateInfo) => {
     console.log(`[AutoUpdater] Versi baru ditemukan: v${info.version} (Rilis: ${info.releaseDate})`);
 
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    // Tampilkan konfirmasi unduhan kepada pengguna
     const dialogResult: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow, {
       type: 'info',
       buttons: ['Download Pembaruan Sekarang', 'Nanti Saja'],
@@ -70,18 +91,15 @@ function setupAutoUpdater(): void {
     }
   });
 
-  // 3. Event: Pembaruan tidak tersedia (aplikasi sudah versi terbaru)
   autoUpdater.on('update-not-available', (info: UpdateInfo) => {
     console.log(`[AutoUpdater] Aplikasi sudah merupakan versi terbaru (v${info.version}).`);
   });
 
-  // 4. Event: Progres Pengunduhan
   autoUpdater.on('download-progress', (progressObj: ProgressInfo) => {
     const percent = Math.round(progressObj.percent);
     const speedKB = Math.round(progressObj.bytesPerSecond / 1024);
     console.log(`[AutoUpdater] Mengunduh: ${percent}% (${speedKB} KB/s)`);
 
-    // Teruskan progres ke renderer window jika diperlukan
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('download-progress', {
         percent,
@@ -92,20 +110,17 @@ function setupAutoUpdater(): void {
     }
   });
 
-  // 5. Event: File update selesai diunduh & diverifikasi
   autoUpdater.on('update-downloaded', async (info: UpdateInfo) => {
     console.log(`[AutoUpdater] Unduhan selesai untuk versi v${info.version}!`);
 
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    // Format catatan rilis (Release Notes / Changelog dari GitHub)
     const releaseNotesText = typeof info.releaseNotes === 'string'
       ? info.releaseNotes
       : (Array.isArray(info.releaseNotes)
           ? info.releaseNotes.map((n) => typeof n === 'string' ? n : (n.note || '')).join('\n')
           : 'Pembaruan stabilitas, fitur baru, dan peningkatan performa.');
 
-    // Tampilkan notifikasi dialog berisi apa saja yang baru dan tombol restart
     const dialogResult: MessageBoxReturnValue = await dialog.showMessageBox(mainWindow, {
       type: 'info',
       buttons: ['Restart & Pasang Sekarang', 'Nanti Saja (Saat Keluar)'],
@@ -118,31 +133,18 @@ function setupAutoUpdater(): void {
 
     if (dialogResult.response === 0) {
       console.log('[AutoUpdater] Melakukan restart aplikasi dan instalasi pembaruan...');
-      // Parameter: isSilent = false, isForceRunAfter = true
       autoUpdater.quitAndInstall(false, true);
     }
   });
 
-  // 6. Event: Penanganan Error
   autoUpdater.on('error', (err: Error) => {
     console.error('[AutoUpdater] Terjadi kesalahan pada proses auto-updater:', err.message);
   });
 }
 
-// -------------------------------------------------------------
-// Siklus Hidup Aplikasi (App Lifecycle)
-// -------------------------------------------------------------
 app.whenReady().then(() => {
   createWindow();
   setupAutoUpdater();
-
-  // Otomatis periksa rilis baru di GitHub setiap kali aplikasi dibuka (khusus versi terpasang)
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdates().catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn('[AutoUpdater] Pengecekan otomatis saat startup gagal:', message);
-    });
-  }
 });
 
 app.on('activate', () => {

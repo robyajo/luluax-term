@@ -36,6 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const electron_updater_1 = require("electron-updater");
 const path = __importStar(require("path"));
+// Start the local backend server in-process
+require("./server.js");
+const PORT = 3980;
 // Konfigurasi Logging bawaan
 electron_updater_1.autoUpdater.logger = console;
 // Nonaktifkan unduhan otomatis agar menunggu konfirmasi tombol dari pengguna
@@ -57,26 +60,39 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js')
         }
     });
-    // Muat URL server lokal aplikasi
-    mainWindow.loadURL('http://127.0.0.1:3980');
+    const loadApp = () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.loadURL(`http://127.0.0.1:${PORT}`);
+        }
+    };
+    // Tunggu sebentar hingga port server lokal siap bind socket
+    setTimeout(loadApp, 500);
+    // Jika koneksi awal gagal (misal server butuh waktu inisialisasi), auto-retry
+    mainWindow.webContents.on('did-fail-load', (_event, errorCode) => {
+        if (errorCode !== -3) {
+            setTimeout(loadApp, 800);
+        }
+    });
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+    mainWindow.webContents.on('did-finish-load', () => {
+        if (electron_1.app.isPackaged) {
+            electron_updater_1.autoUpdater.checkForUpdates().catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                console.warn('[AutoUpdater] Pengecekan otomatis saat startup gagal:', message);
+            });
+        }
+    });
 }
-/**
- * Konfigurasi Event Listener Auto-Updater (electron-updater)
- */
 function setupAutoUpdater() {
-    // 1. Event: Memulai pemeriksaan pembaruan
     electron_updater_1.autoUpdater.on('checking-for-update', () => {
         console.log('[AutoUpdater] Sedang memeriksa rilis terbaru di GitHub Releases...');
     });
-    // 2. Event: Pembaruan tersedia di GitHub
     electron_updater_1.autoUpdater.on('update-available', async (info) => {
         console.log(`[AutoUpdater] Versi baru ditemukan: v${info.version} (Rilis: ${info.releaseDate})`);
         if (!mainWindow || mainWindow.isDestroyed())
             return;
-        // Tampilkan konfirmasi unduhan kepada pengguna
         const dialogResult = await electron_1.dialog.showMessageBox(mainWindow, {
             type: 'info',
             buttons: ['Download Pembaruan Sekarang', 'Nanti Saja'],
@@ -94,16 +110,13 @@ function setupAutoUpdater() {
             });
         }
     });
-    // 3. Event: Pembaruan tidak tersedia (aplikasi sudah versi terbaru)
     electron_updater_1.autoUpdater.on('update-not-available', (info) => {
         console.log(`[AutoUpdater] Aplikasi sudah merupakan versi terbaru (v${info.version}).`);
     });
-    // 4. Event: Progres Pengunduhan
     electron_updater_1.autoUpdater.on('download-progress', (progressObj) => {
         const percent = Math.round(progressObj.percent);
         const speedKB = Math.round(progressObj.bytesPerSecond / 1024);
         console.log(`[AutoUpdater] Mengunduh: ${percent}% (${speedKB} KB/s)`);
-        // Teruskan progres ke renderer window jika diperlukan
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('download-progress', {
                 percent,
@@ -113,18 +126,15 @@ function setupAutoUpdater() {
             });
         }
     });
-    // 5. Event: File update selesai diunduh & diverifikasi
     electron_updater_1.autoUpdater.on('update-downloaded', async (info) => {
         console.log(`[AutoUpdater] Unduhan selesai untuk versi v${info.version}!`);
         if (!mainWindow || mainWindow.isDestroyed())
             return;
-        // Format catatan rilis (Release Notes / Changelog dari GitHub)
         const releaseNotesText = typeof info.releaseNotes === 'string'
             ? info.releaseNotes
             : (Array.isArray(info.releaseNotes)
                 ? info.releaseNotes.map((n) => typeof n === 'string' ? n : (n.note || '')).join('\n')
                 : 'Pembaruan stabilitas, fitur baru, dan peningkatan performa.');
-        // Tampilkan notifikasi dialog berisi apa saja yang baru dan tombol restart
         const dialogResult = await electron_1.dialog.showMessageBox(mainWindow, {
             type: 'info',
             buttons: ['Restart & Pasang Sekarang', 'Nanti Saja (Saat Keluar)'],
@@ -136,28 +146,16 @@ function setupAutoUpdater() {
         });
         if (dialogResult.response === 0) {
             console.log('[AutoUpdater] Melakukan restart aplikasi dan instalasi pembaruan...');
-            // Parameter: isSilent = false, isForceRunAfter = true
             electron_updater_1.autoUpdater.quitAndInstall(false, true);
         }
     });
-    // 6. Event: Penanganan Error
     electron_updater_1.autoUpdater.on('error', (err) => {
         console.error('[AutoUpdater] Terjadi kesalahan pada proses auto-updater:', err.message);
     });
 }
-// -------------------------------------------------------------
-// Siklus Hidup Aplikasi (App Lifecycle)
-// -------------------------------------------------------------
 electron_1.app.whenReady().then(() => {
     createWindow();
     setupAutoUpdater();
-    // Otomatis periksa rilis baru di GitHub setiap kali aplikasi dibuka (khusus versi terpasang)
-    if (electron_1.app.isPackaged) {
-        electron_updater_1.autoUpdater.checkForUpdates().catch((err) => {
-            const message = err instanceof Error ? err.message : String(err);
-            console.warn('[AutoUpdater] Pengecekan otomatis saat startup gagal:', message);
-        });
-    }
 });
 electron_1.app.on('activate', () => {
     if (electron_1.BrowserWindow.getAllWindows().length === 0) {
