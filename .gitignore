@@ -5,6 +5,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+.ACTIVITY_PROJECT_KEYS
+
 
 # Temporary uploads & SFTP buffers
 temp_uploads/

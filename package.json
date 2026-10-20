@@ -2,13 +2,14 @@
   "name": "luluax-term",
   "version": "1.0.0",
   "description": "Modern SSH & Terminal Client with Cloud Sync for Windows and macOS Apple Silicon",
-  "main": "server.js",
+  "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
     "app:win": "run.bat",
     "app:mac": "bash run-macos.sh",
     "build:mac-arm64": "electron-builder --mac --arm64",
-    "build:win": "electron-builder --win --x64"
+    "build:win": "electron-builder --win --dir",
+    "build:win-exe": "electron-builder --win portable"
   },
   "keywords": [],
   "author": "",
@@ -25,5 +26,26 @@
     "ssh2": "^1.17.0",
     "uuid": "^14.0.3",
     "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron": "^44.9.2",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.luluax.term",
+    "productName": "LuluaX-Term",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "portable",
+        "dir"
+      ]
+    },
+    "asarUnpack": [
+      "**/node-pty/**"
+    ]
   }
 }

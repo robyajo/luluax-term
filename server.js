@@ -15,10 +15,46 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function getWritableDataDir(appName, defaultDataPath) {
+  const isInsideAsar = __dirname.includes('.asar');
+  let targetDir;
+  if (isInsideAsar) {
+    if (process.env.APPDATA) {
+      targetDir = path.join(process.env.APPDATA, appName);
+    } else if (process.platform === 'darwin') {
+      targetDir = path.join(os.homedir(), 'Library', 'Application Support', appName);
+    } else {
+      targetDir = path.join(os.homedir(), `.${appName.toLowerCase()}`);
+    }
+  } else {
+    targetDir = defaultDataPath;
+  }
+
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  // Copy initial seed files from defaultDataPath into writable dir if needed
+  if (fs.existsSync(defaultDataPath)) {
+    try {
+      const files = fs.readdirSync(defaultDataPath);
+      for (const file of files) {
+        const dest = path.join(targetDir, file);
+        if (!fs.existsSync(dest)) {
+          const src = path.join(defaultDataPath, file);
+          if (fs.statSync(src).isFile()) {
+            fs.copyFileSync(src, dest);
+          }
+        }
+      }
+    } catch (e) {
+      // ignore seed read warnings
+    }
+  }
+  return targetDir;
 }
+
+const DATA_DIR = getWritableDataDir('LuluaX-Term', path.join(__dirname, 'data'));
 
 // Helpers for JSON files
 function readData(file, defaultVal = []) {
@@ -52,10 +88,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Upload configuration for SFTP
-const upload = multer({ dest: path.join(__dirname, 'temp_uploads') });
-if (!fs.existsSync(path.join(__dirname, 'temp_uploads'))) {
-  fs.mkdirSync(path.join(__dirname, 'temp_uploads'), { recursive: true });
+const uploadDir = path.join(os.tmpdir(), 'luluax-term-uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
 }
+const upload = multer({ dest: uploadDir });
 
 // -------------------------------------------------------------
 // System Info API (Detects Windows vs macOS Apple Silicon/Intel vs Linux)

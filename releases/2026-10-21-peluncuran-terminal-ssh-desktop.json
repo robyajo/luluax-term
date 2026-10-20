@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-21",
+  "type": "feature",
+  "project": {
+    "name": "Luluak Term"
+  },
+  "title": {
+    "id": "Peluncuran Aplikasi Terminal SSH dan Manajemen Server",
+    "en": "Launch of SSH Terminal and Remote Server Management App"
+  },
+  "body": {
+    "id": "Aplikasi terminal jarak jauh kini hadir untuk memudahkan pengelolaan server, transfer berkas terenkripsi, penyimpanan cuplikan perintah, dan sinkronisasi cloud.",
+    "en": "The remote terminal client is now available to streamline server management, encrypted file transfers, command snippet storage, and cloud synchronization."
+  },
+  "items": [
+    {
+      "type": "new",
+      "id": "Koneksi Terminal SSH Interaktif: Sesi terminal jarak jauh berkecepatan tinggi dengan antarmuka yang nyaman dan responsif.",
+      "en": "Interactive SSH Terminal: High-speed remote terminal sessions with a comfortable and responsive interface."
+    },
+    {
+      "type": "new",
+      "id": "Pengelola Berkas SFTP Terintegrasi: Unggah dan kelola berkas server secara visual dengan aman dan mudah.",
+      "en": "Integrated SFTP File Manager: Visually and securely upload and manage remote server files with ease."
+    },
+    {
+      "type": "new",
+      "id": "Penyimpanan Cuplikan Perintah: Akses dan jalankan perintah rutin secara cepat kapan pun dibutuhkan.",
+      "en": "Command Snippets Library: Quickly access and run routine commands whenever needed."
+    },
+    {
+      "type": "new",
+      "id": "Aplikasi Desktop Portabel & Sinkronisasi Cloud: Jalankan langsung di komputer desktop dengan sinkronisasi pengaturan antarperangkat.",
+      "en": "Portable Desktop App & Cloud Sync: Run directly as a desktop application with cross-device configuration synchronization."
+    }
+  ]
+}
