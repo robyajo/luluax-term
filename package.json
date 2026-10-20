@@ -5,10 +5,11 @@
   "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
-    "app:win": "run.bat",
-    "app:mac": "bash run-macos.sh",
+    "dev:mac": "bash dev-mac.sh",
+    "build:mac": "bash build-mac.sh",
+    "dev:win": "dev-win.bat",
+    "build:win": "build-win.bat",
     "build:mac-arm64": "electron-builder --mac --arm64",
-    "build:win": "electron-builder --win --dir",
     "build:win-exe": "electron-builder --win portable"
   },
   "keywords": [],

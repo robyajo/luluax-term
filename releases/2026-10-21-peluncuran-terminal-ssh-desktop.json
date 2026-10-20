@@ -32,6 +32,11 @@
       "type": "new",
       "id": "Aplikasi Desktop Portabel & Sinkronisasi Cloud: Jalankan langsung di komputer desktop dengan sinkronisasi pengaturan antarperangkat.",
       "en": "Portable Desktop App & Cloud Sync: Run directly as a desktop application with cross-device configuration synchronization."
+    },
+    {
+      "type": "new",
+      "id": "Pembuat Paket Lintas Platform: Skrip otomatisasi siap pakai untuk menjalankan dan memaketkan aplikasi di Windows dan macOS.",
+      "en": "Cross-Platform Package Builders: Ready-to-use automation scripts to run and package applications on Windows and macOS."
     }
   ]
 }

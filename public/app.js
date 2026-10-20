@@ -154,6 +154,16 @@ class LuluaXTermApp {
       currentPath: '',
       host: null
     };
+    this.tunnels = [];
+    this.keys = [];
+    this.localDrives = [];
+    this.localPath = '';
+    this.selectedLocalFile = null;
+    this.selectedRemoteFile = null;
+
+    this.currentUser = null;
+    this.authMode = 'login';
+    this.serverOnline = false;
 
     this.init();
   }
@@ -162,8 +172,12 @@ class LuluaXTermApp {
     this.bindEvents();
     await this.detectSystem();
     await this.loadSettings();
+    await this.checkServerAndAuth();
     await this.loadHosts();
     await this.loadSnippets();
+    await this.loadTunnels();
+    await this.loadKeys();
+    await this.loadLocalDrives();
 
     // Auto-resize terminals when window size changes
     window.addEventListener('resize', () => {
@@ -171,6 +185,146 @@ class LuluaXTermApp {
     });
   }
 
+  async checkServerAndAuth() {
+    const serverUrl = this.settings.cloudApiUrl || 'https://www.luluax-service.duckdns.org';
+    const statusPill = document.getElementById('auth-server-status');
+    const statusLabel = document.getElementById('auth-server-label');
+
+    statusPill.className = 'server-status-pill checking';
+    statusLabel.textContent = `Memeriksa server cloud (${serverUrl})...`;
+
+    try {
+      const healthRes = await fetch(`${serverUrl}/api/health`, { method: 'GET', signal: AbortSignal.timeout(6000) });
+      const healthData = await healthRes.json();
+      if (healthData.success) {
+        this.serverOnline = true;
+        statusPill.className = 'server-status-pill online';
+        statusLabel.textContent = `● Terhubung ke Server Cloud (${serverUrl})`;
+      } else {
+        throw new Error('Server returned unready state');
+      }
+    } catch (e) {
+      this.serverOnline = false;
+      statusPill.className = 'server-status-pill offline';
+      statusLabel.textContent = `▲ Tidak dapat terhubung ke server cloud. Pastikan internet & server aktif.`;
+    }
+
+    // Check stored token
+    const savedToken = localStorage.getItem('luluax_auth_token');
+    if (savedToken && this.serverOnline) {
+      try {
+        const meRes = await fetch(`${serverUrl}/api/auth/me`, {
+          headers: { 'Authorization': `Bearer ${savedToken}` }
+        });
+        const meData = await meRes.json();
+        if (meData.success && meData.user) {
+          this.currentUser = meData.user;
+          document.getElementById('auth-overlay').style.display = 'none';
+          this.renderUserProfile();
+          return;
+        }
+      } catch (e) {
+        console.warn('Session verification error:', e);
+      }
+    }
+
+    // If not authenticated, keep auth overlay visible
+    document.getElementById('auth-overlay').style.display = 'flex';
+  }
+
+  switchAuthMode(mode) {
+    this.authMode = mode;
+    document.getElementById('auth-tab-login').classList.toggle('active', mode === 'login');
+    document.getElementById('auth-tab-register').classList.toggle('active', mode === 'register');
+    document.getElementById('group-auth-name').style.display = mode === 'register' ? 'block' : 'none';
+    document.getElementById('btn-auth-submit').textContent = mode === 'login' ? 'Masuk ke LuluaX' : 'Daftar Akun Baru';
+    document.getElementById('auth-error-msg').style.display = 'none';
+  }
+
+  quickFillSeededUser(type) {
+    this.switchAuthMode('login');
+    if (type === 'roby') {
+      document.getElementById('auth-email').value = 'robyfull.dev@gmail.com';
+      document.getElementById('auth-password').value = 'Password@123';
+    } else {
+      document.getElementById('auth-email').value = 'admin@luluax.com';
+      document.getElementById('auth-password').value = 'Password@123';
+    }
+  }
+
+  async handleAuthSubmit() {
+    const serverUrl = this.settings.cloudApiUrl || 'https://www.luluax-service.duckdns.org';
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const name = document.getElementById('auth-name').value.trim();
+    const errorBox = document.getElementById('auth-error-msg');
+    const submitBtn = document.getElementById('btn-auth-submit');
+
+    errorBox.style.display = 'none';
+
+    if (!this.serverOnline) {
+      errorBox.textContent = 'Gagal: Aplikasi harus terhubung ke internet dan server untuk autentikasi.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Memproses...';
+
+    try {
+      const endpoint = this.authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const payload = this.authMode === 'login' ? { email, password } : { email, password, name };
+
+      const res = await fetch(`${serverUrl}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        localStorage.setItem('luluax_auth_token', data.token);
+        this.currentUser = data.user;
+        document.getElementById('auth-overlay').style.display = 'none';
+        this.renderUserProfile();
+
+        // Auto-configure sync key to email/userId
+        if (!this.settings.cloudSyncKey) {
+          this.settings.cloudSyncKey = data.user.id || data.user.email;
+          document.getElementById('setting-cloud-key').value = this.settings.cloudSyncKey;
+          this.saveSettings();
+        }
+      } else {
+        errorBox.textContent = data.error || 'Autentikasi gagal. Silakan periksa kembali.';
+        errorBox.style.display = 'block';
+      }
+    } catch (e) {
+      errorBox.textContent = 'Kesalahan jaringan: ' + e.message;
+      errorBox.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = this.authMode === 'login' ? 'Masuk ke LuluaX' : 'Daftar Akun Baru';
+    }
+  }
+
+  renderUserProfile() {
+    if (!this.currentUser) return;
+    const card = document.getElementById('user-profile-card');
+    card.style.display = 'flex';
+    document.getElementById('user-display-name').textContent = this.currentUser.name || this.currentUser.email.split('@')[0];
+    document.getElementById('user-display-email').textContent = this.currentUser.email;
+    const initials = (this.currentUser.name || this.currentUser.email).substring(0, 1).toUpperCase();
+    document.getElementById('user-avatar-initials').textContent = initials;
+  }
+
+  logout() {
+    if (!confirm('Apakah Anda yakin ingin keluar / logout?')) return;
+    localStorage.removeItem('luluax_auth_token');
+    this.currentUser = null;
+    document.getElementById('user-profile-card').style.display = 'none';
+    document.getElementById('auth-overlay').style.display = 'flex';
+    this.switchAuthMode('login');
+  }
   async detectSystem() {
     try {
       const res = await fetch('/api/system');
@@ -271,13 +425,33 @@ class LuluaXTermApp {
       this.pullFromCloud();
     });
 
-    // SFTP actions
+    // Dual-Pane SFTP actions
     document.getElementById('btn-sftp-connect').addEventListener('click', () => {
       const hostId = document.getElementById('sftp-host-select').value;
       if (hostId) this.connectSftp(hostId);
     });
 
-    document.getElementById('btn-sftp-up').addEventListener('click', () => {
+    document.getElementById('local-drive-select').addEventListener('change', (e) => {
+      this.loadLocalDir(e.target.value);
+    });
+
+    document.getElementById('btn-local-up').addEventListener('click', () => {
+      this.loadLocalParentDir();
+    });
+
+    document.getElementById('btn-local-refresh').addEventListener('click', () => {
+      this.loadLocalDir(this.localPath);
+    });
+
+    document.getElementById('btn-transfer-upload').addEventListener('click', () => {
+      this.transferLocalToRemote();
+    });
+
+    document.getElementById('btn-transfer-download').addEventListener('click', () => {
+      this.transferRemoteToLocal();
+    });
+
+    document.getElementById('btn-remote-up').addEventListener('click', () => {
       if (!this.sftp.currentPath) return;
       const parts = this.sftp.currentPath.replace(/\/+$/, '').split('/');
       parts.pop();
@@ -285,19 +459,26 @@ class LuluaXTermApp {
       this.loadSftpDir(parentPath);
     });
 
-    document.getElementById('btn-sftp-refresh').addEventListener('click', () => {
+    document.getElementById('btn-remote-refresh').addEventListener('click', () => {
       if (this.sftp.currentPath) this.loadSftpDir(this.sftp.currentPath);
     });
 
-    document.getElementById('btn-sftp-mkdir').addEventListener('click', () => {
-      const name = prompt('Enter new directory name:');
+    document.getElementById('btn-remote-mkdir').addEventListener('click', () => {
+      const name = prompt('Masukkan nama direktori baru di remote:');
       if (name) this.sftpMkdir(name);
     });
 
-    document.getElementById('sftp-file-input').addEventListener('change', (e) => {
-      if (e.target.files.length > 0) {
-        this.sftpUploadFile(e.target.files[0]);
-      }
+    // Tunnels and Key Vault actions
+    document.getElementById('btn-add-tunnel').addEventListener('click', () => {
+      this.openTunnelModal();
+    });
+
+    document.getElementById('btn-generate-key').addEventListener('click', () => {
+      this.generateKey('ed25519');
+    });
+
+    document.getElementById('btn-import-key').addEventListener('click', () => {
+      this.openKeyModal();
     });
   }
 
@@ -314,9 +495,13 @@ class LuluaXTermApp {
       setTimeout(() => this.fitActiveTerminal(), 50);
     } else if (viewName === 'sftp') {
       this.populateSftpHostSelect();
+      this.loadLocalDrives();
+    } else if (viewName === 'tunnels') {
+      this.renderTunnels();
+    } else if (viewName === 'keys') {
+      this.renderKeys();
     }
   }
-
   // ----------------------------------------------------------------
   // Settings
   // ----------------------------------------------------------------
@@ -1202,6 +1387,11 @@ class LuluaXTermApp {
           </div>
         </td>
       `;
+      tr.addEventListener('click', () => {
+        document.querySelectorAll('#remote-file-list tr').forEach(r => r.classList.remove('selected'));
+        tr.classList.add('selected');
+        this.selectedRemoteFile = { name: item.name, fullPath: itemPath, isDirectory: item.isDirectory };
+      });
       listBody.appendChild(tr);
     });
   }
@@ -1280,6 +1470,402 @@ class LuluaXTermApp {
     }
   }
 
+// -------------------------------------------------------------
+// Termius Dual-Pane SFTP Implementation
+// -------------------------------------------------------------
+  async loadLocalDrives() {
+    try {
+      const res = await fetch('/api/local/drives');
+      const data = await res.json();
+      if (data.success) {
+        this.localDrives = data.drives;
+        const select = document.getElementById('local-drive-select');
+        select.innerHTML = '';
+        this.localDrives.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d;
+          select.appendChild(opt);
+        });
+        if (!this.localPath) {
+          this.localPath = data.defaultPath || data.drives[0];
+        }
+        await this.loadLocalDir(this.localPath);
+      }
+    } catch (e) {
+      console.warn('Local drives error:', e);
+    }
+  }
+
+  async loadLocalDir(targetPath) {
+    this.localPath = targetPath;
+    document.getElementById('local-current-path').value = targetPath;
+    const tbody = document.getElementById('local-file-list');
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Membaca folder lokal...</td></tr>`;
+
+    try {
+      const res = await fetch('/api/local/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: targetPath })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.renderLocalFiles(data.items);
+      } else {
+        tbody.innerHTML = `<tr><td colspan="3" class="empty-cell" style="color:var(--danger)">Error: ${data.error}</td></tr>`;
+      }
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty-cell" style="color:var(--danger)">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  loadLocalParentDir() {
+    if (!this.localPath) return;
+    const isWin = this.localPath.includes('\\');
+    const sep = isWin ? '\\' : '/';
+    const parts = this.localPath.replace(/[\\/]+$/, '').split(sep);
+    if (parts.length > 1) {
+      parts.pop();
+      let parent = parts.join(sep);
+      if (isWin && parent.length === 2 && parent.endsWith(':')) parent += '\\';
+      this.loadLocalDir(parent || (isWin ? 'C:\\' : '/'));
+    }
+  }
+
+  renderLocalFiles(items) {
+    const tbody = document.getElementById('local-file-list');
+    tbody.innerHTML = '';
+
+    if (!items || items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Folder kosong.</td></tr>`;
+      return;
+    }
+
+    items.forEach(it => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <div class="sftp-name-cell" onclick="app.onLocalItemClick('${this.escapeJs(it.fullPath)}', ${it.isDirectory})">
+            ${it.isDirectory ? '📁' : '📄'}
+            <span style="font-size:12px">${this.escapeHtml(it.name)}</span>
+          </div>
+        </td>
+        <td style="font-family:var(--font-mono); font-size:11.5px">${it.isDirectory ? '--' : this.formatBytes(it.size)}</td>
+        <td style="font-size:11px; color:var(--text-muted)">${new Date(it.modifyTime).toLocaleDateString()}</td>
+      `;
+      tr.addEventListener('click', () => {
+        document.querySelectorAll('#local-file-list tr').forEach(r => r.classList.remove('selected'));
+        tr.classList.add('selected');
+        this.selectedLocalFile = it;
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  onLocalItemClick(fullPath, isDirectory) {
+    if (isDirectory) {
+      this.loadLocalDir(fullPath);
+    }
+  }
+
+  async transferLocalToRemote() {
+    const msgEl = document.getElementById('transfer-status-msg');
+    if (!this.sftp.sessionId) {
+      alert('Silakan hubungkan ke server SSH remote terlebih dahulu (panel kanan).');
+      return;
+    }
+    if (!this.selectedLocalFile || this.selectedLocalFile.isDirectory) {
+      alert('Pilih satu file lokal di panel kiri untuk di-upload.');
+      return;
+    }
+
+    msgEl.textContent = `Uploading ${this.selectedLocalFile.name}...`;
+    try {
+      const res = await fetch('/api/sftp/transfer-local-to-remote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: this.sftp.sessionId,
+          localFilePath: this.selectedLocalFile.fullPath,
+          remoteDirPath: this.sftp.currentPath
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        msgEl.textContent = `✓ Selesai upload!`;
+        this.loadSftpDir(this.sftp.currentPath);
+        setTimeout(() => msgEl.textContent = '', 3000);
+      } else {
+        msgEl.textContent = `✗ Gagal: ${data.error}`;
+      }
+    } catch (e) {
+      msgEl.textContent = `✗ Error: ${e.message}`;
+    }
+  }
+
+  async transferRemoteToLocal() {
+    const msgEl = document.getElementById('transfer-status-msg');
+    if (!this.sftp.sessionId) {
+      alert('Silakan hubungkan ke server SSH remote terlebih dahulu.');
+      return;
+    }
+    if (!this.selectedRemoteFile || this.selectedRemoteFile.isDirectory) {
+      alert('Pilih satu file remote di panel kanan untuk di-download ke lokal.');
+      return;
+    }
+
+    msgEl.textContent = `Downloading ${this.selectedRemoteFile.name}...`;
+    try {
+      const res = await fetch('/api/sftp/transfer-remote-to-local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: this.sftp.sessionId,
+          remoteFilePath: this.selectedRemoteFile.fullPath,
+          localDirPath: this.localPath
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        msgEl.textContent = `✓ Selesai download!`;
+        this.loadLocalDir(this.localPath);
+        setTimeout(() => msgEl.textContent = '', 3000);
+      } else {
+        msgEl.textContent = `✗ Gagal: ${data.error}`;
+      }
+    } catch (e) {
+      msgEl.textContent = `✗ Error: ${e.message}`;
+    }
+  }
+
+// -------------------------------------------------------------
+// Termius Port Forwarding / Tunnels Implementation
+// -------------------------------------------------------------
+  async loadTunnels() {
+    try {
+      const res = await fetch('/api/tunnels');
+      const data = await res.json();
+      if (data.success) {
+        this.tunnels = data.tunnels;
+        this.renderTunnels();
+      }
+    } catch (e) {
+      console.warn('Tunnels load error:', e);
+    }
+  }
+
+  renderTunnels() {
+    const grid = document.getElementById('tunnels-grid');
+    grid.innerHTML = '';
+
+    if (this.tunnels.length === 0) {
+      grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:48px; color:var(--text-muted)">Belum ada Port Forwarding / Tunnel. Klik "+ New Tunnel" untuk membuat.</div>`;
+      return;
+    }
+
+    this.tunnels.forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'tunnel-card';
+      const host = this.hosts.find(h => h.id === t.hostId) || { label: 'Unknown Host' };
+
+      card.innerHTML = `
+        <div class="tunnel-header">
+          <div>
+            <div class="tunnel-title">${this.escapeHtml(t.label)}</div>
+            <span class="host-group-tag" style="margin-top:4px">${this.escapeHtml(host.label)}</span>
+          </div>
+          <label class="switch-toggle">
+            <input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="app.toggleTunnel('${t.id}')">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="tunnel-route-flow">
+          <span class="route-port">:${t.localPort}</span>
+          <span class="route-arrow">➔ ${t.tunnelType.toUpperCase()} ➔</span>
+          <span class="route-target">${this.escapeHtml(t.remoteHost)}:${t.remotePort}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px">
+          <span style="font-size:11px; color:${t.enabled ? 'var(--success)' : 'var(--text-muted)'}">
+            ${t.enabled ? '● Tunnel Aktif' : '○ Nonaktif'}
+          </span>
+          <button class="btn-card-icon" title="Hapus Tunnel" onclick="app.deleteTunnel('${t.id}')">&times;</button>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  openTunnelModal() {
+    const select = document.getElementById('tunnel-host-id');
+    select.innerHTML = '<option value="">Pilih SSH Host Gateway...</option>';
+    this.hosts.filter(h => h.type === 'ssh').forEach(h => {
+      const opt = document.createElement('option');
+      opt.value = h.id;
+      opt.textContent = `${h.label} (${h.username}@${h.hostname})`;
+      select.appendChild(opt);
+    });
+    document.getElementById('form-tunnel').reset();
+    document.getElementById('modal-tunnel').classList.add('active');
+  }
+
+  async saveTunnel() {
+    const payload = {
+      label: document.getElementById('tunnel-label').value.trim(),
+      hostId: document.getElementById('tunnel-host-id').value,
+      tunnelType: document.getElementById('tunnel-type').value,
+      localPort: parseInt(document.getElementById('tunnel-local-port').value, 10),
+      remoteHost: document.getElementById('tunnel-remote-host').value.trim(),
+      remotePort: parseInt(document.getElementById('tunnel-remote-port').value, 10),
+      enabled: true
+    };
+
+    try {
+      const res = await fetch('/api/tunnels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.closeModal('modal-tunnel');
+        await this.loadTunnels();
+      }
+    } catch (e) {
+      alert('Error saving tunnel: ' + e.message);
+    }
+  }
+
+  async toggleTunnel(id) {
+    try {
+      await fetch(`/api/tunnels/${id}/toggle`, { method: 'POST' });
+      await this.loadTunnels();
+    } catch (e) {
+      console.warn('Toggle tunnel error:', e);
+    }
+  }
+
+  async deleteTunnel(id) {
+    if (!confirm('Hapus tunnel ini?')) return;
+    try {
+      await fetch(`/api/tunnels/${id}`, { method: 'DELETE' });
+      await this.loadTunnels();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+// -------------------------------------------------------------
+// Termius SSH Key Vault Implementation
+// -------------------------------------------------------------
+  async loadKeys() {
+    try {
+      const res = await fetch('/api/keys');
+      const data = await res.json();
+      if (data.success) {
+        this.keys = data.keys;
+        this.renderKeys();
+      }
+    } catch (e) {
+      console.warn('Keys load error:', e);
+    }
+  }
+
+  renderKeys() {
+    const grid = document.getElementById('keys-grid');
+    grid.innerHTML = '';
+
+    if (this.keys.length === 0) {
+      grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:48px; color:var(--text-muted)">Key Vault kosong. Klik "+ Generate Key" untuk membuat cryptographic keypair Ed25519 baru.</div>`;
+      return;
+    }
+
+    this.keys.forEach(k => {
+      const card = document.createElement('div');
+      card.className = 'key-card';
+      card.innerHTML = `
+        <div class="key-header">
+          <div>
+            <div class="key-title">${this.escapeHtml(k.label)}</div>
+            <span class="host-group-tag" style="margin-top:4px">${k.keyType.toUpperCase()}</span>
+          </div>
+          <button class="btn-card-icon" title="Hapus Key" onclick="app.deleteKey('${k.id}')">&times;</button>
+        </div>
+        <div class="key-fingerprint">
+          ${this.escapeHtml(k.publicKey.substring(0, 75))}...
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center">
+          <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${this.escapeJs(k.publicKey)}'); alert('Public Key disalin ke clipboard! Tempelkan pada ~/.ssh/authorized_keys remote.')">
+            📋 Salin Public Key
+          </button>
+          <span style="font-size:11px; color:var(--text-muted)">${new Date(k.createdAt).toLocaleDateString()}</span>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  async generateKey(keyType = 'ed25519') {
+    const label = prompt('Nama Kunci (Key Label):', 'My Ed25519 Key');
+    if (!label) return;
+
+    try {
+      const res = await fetch('/api/keys/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyType, label })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Kunci ${keyType.toUpperCase()} berhasil dibuat! Public Key siap dipasang di server.`);
+        await this.loadKeys();
+      }
+    } catch (e) {
+      alert('Gagal generate key: ' + e.message);
+    }
+  }
+
+  openKeyModal() {
+    document.getElementById('form-key').reset();
+    document.getElementById('modal-key').classList.add('active');
+  }
+
+  async saveImportedKey() {
+    const payload = {
+      label: document.getElementById('key-label').value.trim(),
+      privateKey: document.getElementById('key-private').value.trim(),
+      publicKey: document.getElementById('key-public').value.trim() || 'Imported Private Key',
+      keyType: 'rsa'
+    };
+
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.closeModal('modal-key');
+        await this.loadKeys();
+      }
+    } catch (e) {
+      alert('Error saving key: ' + e.message);
+    }
+  }
+
+  async deleteKey(id) {
+    if (!confirm('Hapus kunci ini dari Vault?')) return;
+    try {
+      await fetch(`/api/keys/${id}`, { method: 'DELETE' });
+      await this.loadKeys();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Utilities
   // ----------------------------------------------------------------
   // Utilities
   // ----------------------------------------------------------------

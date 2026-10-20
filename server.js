@@ -566,6 +566,208 @@ app.post('/api/sftp/disconnect', (req, res) => {
 });
 
 // -------------------------------------------------------------
+// Termius Feature 1: Dual-Pane SFTP (Local Filesystem Explorer)
+// -------------------------------------------------------------
+app.get('/api/local/drives', (req, res) => {
+  if (os.platform() === 'win32') {
+    const candidateDrives = ['C:', 'D:', 'E:', 'F:', 'G:'];
+    const existing = [];
+    for (const d of candidateDrives) {
+      try {
+        if (fs.existsSync(d + '\\')) {
+          existing.push(d + '\\');
+        }
+      } catch (e) {}
+    }
+    return res.json({ success: true, drives: existing.length > 0 ? existing : ['C:\\'], defaultPath: os.homedir() });
+  }
+  return res.json({ success: true, drives: ['/'], defaultPath: os.homedir() });
+});
+
+app.post('/api/local/list', (req, res) => {
+  const targetPath = req.body.path || os.homedir();
+  try {
+    const entries = fs.readdirSync(targetPath, { withFileTypes: true });
+    const items = [];
+
+    for (const ent of entries) {
+      try {
+        const fullPath = path.join(targetPath, ent.name);
+        const stat = fs.statSync(fullPath);
+        items.push({
+          name: ent.name,
+          isDirectory: ent.isDirectory(),
+          size: stat.size,
+          modifyTime: stat.mtimeMs,
+          fullPath
+        });
+      } catch (e) {
+        // ignore permission errors on system files
+      }
+    }
+
+    items.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    res.json({ success: true, path: targetPath, items });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Direct Dual-Pane Transfers (Local to Remote and Remote to Local)
+app.post('/api/sftp/transfer-local-to-remote', (req, res) => {
+  const { sessionId, localFilePath, remoteDirPath } = req.body;
+  const session = sftpClients.get(sessionId);
+  if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired' });
+  if (!fs.existsSync(localFilePath)) return res.status(400).json({ success: false, error: 'Local file does not exist' });
+
+  const fileName = path.basename(localFilePath);
+  const destination = path.posix.join(remoteDirPath, fileName);
+
+  const readStream = fs.createReadStream(localFilePath);
+  const writeStream = session.sftp.createWriteStream(destination);
+
+  writeStream.on('close', () => res.json({ success: true, path: destination }));
+  writeStream.on('error', (err) => res.status(500).json({ success: false, error: err.message }));
+  readStream.pipe(writeStream);
+});
+
+app.post('/api/sftp/transfer-remote-to-local', (req, res) => {
+  const { sessionId, remoteFilePath, localDirPath } = req.body;
+  const session = sftpClients.get(sessionId);
+  if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired' });
+
+  const fileName = path.basename(remoteFilePath);
+  const destination = path.join(localDirPath, fileName);
+
+  const readStream = session.sftp.createReadStream(remoteFilePath);
+  const writeStream = fs.createWriteStream(destination);
+
+  writeStream.on('close', () => res.json({ success: true, path: destination }));
+  writeStream.on('error', (err) => res.status(500).json({ success: false, error: err.message }));
+  readStream.pipe(writeStream);
+});
+
+// -------------------------------------------------------------
+// Termius Feature 2: SSH Key Vault Manager
+// -------------------------------------------------------------
+app.get('/api/keys', (req, res) => {
+  const keys = readData('keys.json', []);
+  res.json({ success: true, keys });
+});
+
+app.post('/api/keys', (req, res) => {
+  const keys = readData('keys.json', []);
+  const newKey = {
+    id: req.body.id || `key_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    label: req.body.label || 'New Key',
+    keyType: req.body.keyType || 'ed25519',
+    publicKey: req.body.publicKey || '',
+    privateKey: req.body.privateKey || '',
+    passphrase: req.body.passphrase || '',
+    createdAt: Date.now()
+  };
+  keys.push(newKey);
+  writeData('keys.json', keys);
+  res.json({ success: true, key: newKey });
+});
+
+app.delete('/api/keys/:id', (req, res) => {
+  let keys = readData('keys.json', []);
+  keys = keys.filter(k => k.id !== req.params.id);
+  writeData('keys.json', keys);
+  res.json({ success: true });
+});
+
+app.post('/api/keys/generate', (req, res) => {
+  const { keyType = 'ed25519', label = 'Generated Key' } = req.body;
+  try {
+    const crypto = require('crypto');
+    let publicKey, privateKey;
+
+    if (keyType === 'ed25519') {
+      const pair = crypto.generateKeyPairSync('ed25519', {
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+      });
+      publicKey = pair.publicKey;
+      privateKey = pair.privateKey;
+    } else {
+      const pair = crypto.generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+      });
+      publicKey = pair.publicKey;
+      privateKey = pair.privateKey;
+    }
+
+    const keys = readData('keys.json', []);
+    const newKey = {
+      id: `key_${Date.now()}`,
+      label,
+      keyType,
+      publicKey,
+      privateKey,
+      createdAt: Date.now()
+    };
+    keys.push(newKey);
+    writeData('keys.json', keys);
+
+    res.json({ success: true, key: newKey });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// Termius Feature 3: Port Forwarding / Tunnels
+// -------------------------------------------------------------
+app.get('/api/tunnels', (req, res) => {
+  const tunnels = readData('tunnels.json', []);
+  res.json({ success: true, tunnels });
+});
+
+app.post('/api/tunnels', (req, res) => {
+  const tunnels = readData('tunnels.json', []);
+  const newTunnel = {
+    id: req.body.id || `tun_${Date.now()}`,
+    label: req.body.label || 'New Tunnel',
+    hostId: req.body.hostId || '',
+    tunnelType: req.body.tunnelType || 'local',
+    localPort: Number(req.body.localPort || 8080),
+    remoteHost: req.body.remoteHost || '127.0.0.1',
+    remotePort: Number(req.body.remotePort || 80),
+    enabled: Boolean(req.body.enabled),
+    createdAt: Date.now()
+  };
+  tunnels.push(newTunnel);
+  writeData('tunnels.json', tunnels);
+  res.json({ success: true, tunnel: newTunnel });
+});
+
+app.post('/api/tunnels/:id/toggle', (req, res) => {
+  const tunnels = readData('tunnels.json', []);
+  const tunnel = tunnels.find(t => t.id === req.params.id);
+  if (!tunnel) return res.status(404).json({ success: false, error: 'Tunnel not found' });
+
+  tunnel.enabled = !tunnel.enabled;
+  writeData('tunnels.json', tunnels);
+  res.json({ success: true, enabled: tunnel.enabled });
+});
+
+app.delete('/api/tunnels/:id', (req, res) => {
+  let tunnels = readData('tunnels.json', []);
+  tunnels = tunnels.filter(t => t.id !== req.params.id);
+  writeData('tunnels.json', tunnels);
+  res.json({ success: true });
+});
+
+// -------------------------------------------------------------
 // Cross-Platform WebSocket Terminal Streaming (Windows & macOS Apple Silicon)
 // -------------------------------------------------------------
 function resolveLocalShell(shellType) {
