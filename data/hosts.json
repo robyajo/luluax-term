@@ -1,0 +1,52 @@
+[
+  {
+    "id": "local-zsh",
+    "label": "Local zsh (macOS)",
+    "type": "local",
+    "shellType": "zsh",
+    "group": "Local System",
+    "color": "#7b61ff",
+    "createdAt": 1729440000000,
+    "lastConnected": null
+  },
+  {
+    "id": "local-powershell",
+    "label": "Local PowerShell (Windows)",
+    "type": "local",
+    "shellType": "powershell",
+    "group": "Local System",
+    "color": "#00d2ff",
+    "createdAt": 1729440000000,
+    "lastConnected": null
+  },
+  {
+    "id": "local-cmd",
+    "label": "Command Prompt (Windows)",
+    "type": "local",
+    "shellType": "cmd",
+    "group": "Local System",
+    "color": "#ffab00",
+    "createdAt": 1729440000000,
+    "lastConnected": null
+  },
+  {
+    "id": "local-gitbash",
+    "label": "Git Bash",
+    "type": "local",
+    "shellType": "gitbash",
+    "group": "Local System",
+    "color": "#ff6d00",
+    "createdAt": 1729440000000,
+    "lastConnected": null
+  },
+  {
+    "id": "local-wsl",
+    "label": "WSL (Linux)",
+    "type": "local",
+    "shellType": "wsl",
+    "group": "Local System",
+    "color": "#00e676",
+    "createdAt": 1729440000000,
+    "lastConnected": null
+  }
+]

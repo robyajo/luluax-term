@@ -1,0 +1,67 @@
+[
+  {
+    "id": "snip-system-info",
+    "title": "System & Resource Info",
+    "description": "Displays OS info, memory, and disk usage",
+    "command": "uname -a && free -h && df -h",
+    "category": "System",
+    "tags": [
+      "linux",
+      "monitoring"
+    ]
+  },
+  {
+    "id": "snip-docker-ps",
+    "title": "Docker Running Containers",
+    "description": "Lists all active Docker containers with formatting",
+    "command": "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'",
+    "category": "Docker",
+    "tags": [
+      "docker",
+      "devops"
+    ]
+  },
+  {
+    "id": "snip-docker-stats",
+    "title": "Docker Live Resource Stats",
+    "description": "Live CPU, memory and I/O usage for containers",
+    "command": "docker stats --no-stream",
+    "category": "Docker",
+    "tags": [
+      "docker",
+      "monitoring"
+    ]
+  },
+  {
+    "id": "snip-network-ports",
+    "title": "Active Listening Ports",
+    "description": "Show listening TCP and UDP sockets with process names",
+    "command": "ss -tulpn",
+    "category": "Network",
+    "tags": [
+      "network",
+      "security"
+    ]
+  },
+  {
+    "id": "snip-top-processes",
+    "title": "Top 10 Memory Hog Processes",
+    "description": "Lists the 10 processes consuming the most RAM",
+    "command": "ps aux --sort=-%mem | head -n 11",
+    "category": "System",
+    "tags": [
+      "performance"
+    ]
+  },
+  {
+    "id": "snip-win-sysinfo",
+    "title": "Windows System Info (PowerShell)",
+    "description": "Get OS, uptime, and available memory on Windows",
+    "command": "Get-ComputerInfo | Select-Object WindowsProductName, OsTotalVisibleMemorySize, OsFreePhysicalMemory",
+    "category": "Windows",
+    "tags": [
+      "windows",
+      "powershell"
+    ]
+  }
+]

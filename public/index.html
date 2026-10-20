@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LuluaX-Term - Modern SSH & Terminal Client</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="style.css">
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="theme-termius-dark">
+  <div class="app-container">
+    <!-- Left Navigation Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <span class="brand-name">LuluaX<span class="brand-highlight">Term</span></span>
+          <span class="brand-tag" id="app-platform-badge">v1.0 • Windows & macOS</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-view="hosts">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+          </svg>
+          <span>Hosts</span>
+        </button>
+
+        <button class="nav-item" data-view="terminals">
+          <div class="nav-item-content">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            <span>Terminal</span>
+          </div>
+          <span class="badge" id="active-tabs-count">0</span>
+        </button>
+
+        <button class="nav-item" data-view="sftp">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>SFTP Files</span>
+        </button>
+
+        <button class="nav-item" data-view="snippets">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span>Snippets</span>
+        </button>
+
+        <button class="nav-item" data-view="settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="local-status">
+          <div class="status-indicator online"></div>
+          <div class="status-text">
+            <span class="status-title" id="sys-status-title">System Ready</span>
+            <span class="status-sub" id="sys-status-sub">Detecting OS...</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- 1. VIEW: HOSTS -->
+      <section id="view-hosts" class="view-panel active">
+        <header class="panel-header">
+          <div class="header-left">
+            <h2>Saved Hosts</h2>
+            <p class="subtitle">Manage remote SSH servers and local Windows shells</p>
+          </div>
+          <div class="header-right">
+            <div class="search-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="host-search" placeholder="Search hosts by name, IP, group...">
+            </div>
+            <button class="btn btn-primary" id="btn-add-host">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Add Host</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="group-filter-bar" id="host-group-filters">
+          <!-- Dynamic filter chips -->
+        </div>
+
+        <div class="hosts-grid" id="hosts-grid">
+          <!-- Dynamic host cards -->
+        </div>
+      </section>
+
+      <!-- 2. VIEW: TERMINALS -->
+      <section id="view-terminals" class="view-panel">
+        <!-- Terminal Tab Bar -->
+        <div class="terminal-tab-bar">
+          <div class="tabs-container" id="terminal-tabs">
+            <!-- Dynamic terminal tabs -->
+          </div>
+          <div class="tab-bar-actions">
+            <button class="tab-action-btn" id="btn-quick-local" title="Open Local PowerShell Tab">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>New Shell</span>
+            </button>
+            <button class="tab-action-btn" id="btn-reconnect-tab" title="Reconnect Tab">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+            </button>
+            <button class="tab-action-btn" id="btn-clear-tab" title="Clear Screen">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal Containers (Stacked by Tab) -->
+        <div class="terminal-viewport" id="terminal-viewport">
+          <div class="empty-terminal-state" id="empty-terminal-prompt">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+              </svg>
+            </div>
+            <h3>No Active Terminal Session</h3>
+            <p>Select a host from the <strong>Hosts</strong> tab, or launch a local terminal shell below:</p>
+            <div class="quick-launch-buttons">
+              <button class="btn btn-secondary" onclick="app.launchLocal('powershell')">
+                <span>PowerShell</span>
+              </button>
+              <button class="btn btn-secondary" onclick="app.launchLocal('cmd')">
+                <span>Command Prompt</span>
+              </button>
+              <button class="btn btn-secondary" onclick="app.launchLocal('gitbash')">
+                <span>Git Bash</span>
+              </button>
+              <button class="btn btn-secondary" onclick="app.launchLocal('wsl')">
+                <span>WSL</span>
+              </button>
+            </div>
+          </div>
+          <!-- xterm instances will be mounted here -->
+        </div>
+
+        <!-- Terminal Bottom Quick Snippets Bar -->
+        <div class="terminal-snippets-bar" id="terminal-snippets-bar">
+          <div class="snippets-bar-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span>Quick Commands:</span>
+          </div>
+          <div class="snippets-quick-list" id="snippets-quick-chips">
+            <!-- Dynamic quick snippet chips -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. VIEW: SFTP FILE MANAGER -->
+      <section id="view-sftp" class="view-panel">
+        <header class="panel-header">
+          <div class="header-left">
+            <h2>SFTP Remote File Manager</h2>
+            <p class="subtitle">Securely browse, upload, and download files over SSH</p>
+          </div>
+          <div class="header-right">
+            <div class="sftp-connect-bar">
+              <select id="sftp-host-select" class="form-select">
+                <option value="">Select SSH Host to Connect...</option>
+              </select>
+              <button class="btn btn-primary" id="btn-sftp-connect">Connect SFTP</button>
+            </div>
+          </div>
+        </header>
+
+        <div class="sftp-container" id="sftp-container">
+          <div class="sftp-toolbar">
+            <div class="sftp-path-bar">
+              <button class="btn-icon" id="btn-sftp-up" title="Parent Directory">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"></polyline>
+                </svg>
+              </button>
+              <input type="text" id="sftp-current-path" placeholder="/home/username" readonly>
+              <button class="btn-icon" id="btn-sftp-refresh" title="Refresh">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+              </button>
+            </div>
+            <div class="sftp-actions">
+              <label class="btn btn-secondary btn-file-upload">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span>Upload</span>
+                <input type="file" id="sftp-file-input" style="display:none">
+              </label>
+              <button class="btn btn-secondary" id="btn-sftp-mkdir">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  <line x1="12" y1="11" x2="12" y2="17"></line>
+                  <line x1="9" y1="14" x2="15" y2="14"></line>
+                </svg>
+                <span>New Folder</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="sftp-file-table-wrapper">
+            <table class="sftp-table">
+              <thead>
+                <tr>
+                  <th width="50%">Name</th>
+                  <th width="15%">Size</th>
+                  <th width="15%">Permissions</th>
+                  <th width="20%">Modified</th>
+                  <th width="80px">Action</th>
+                </tr>
+              </thead>
+              <tbody id="sftp-file-list">
+                <tr>
+                  <td colspan="5" class="empty-cell">Connect to an SSH host to view remote filesystem.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. VIEW: SNIPPETS -->
+      <section id="view-snippets" class="view-panel">
+        <header class="panel-header">
+          <div class="header-left">
+            <h2>Command Snippets</h2>
+            <p class="subtitle">Save, organize and run command snippets with 1-click execution</p>
+          </div>
+          <div class="header-right">
+            <button class="btn btn-primary" id="btn-add-snippet">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>New Snippet</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="snippets-grid" id="snippets-grid">
+          <!-- Dynamic snippet cards -->
+        </div>
+      </section>
+
+      <!-- 5. VIEW: SETTINGS -->
+      <section id="view-settings" class="view-panel">
+        <header class="panel-header">
+          <div class="header-left">
+            <h2>Application Settings</h2>
+            <p class="subtitle">Customize terminal themes, fonts, behavior and keys</p>
+          </div>
+        </header>
+
+        <div class="settings-content">
+          <div class="settings-card">
+            <h3>Terminal Appearance</h3>
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Theme Preset</label>
+                <p>Color palette applied across all active terminal sessions</p>
+              </div>
+              <select id="setting-theme" class="form-select">
+                <option value="termius-dark">Termius Dark (Default)</option>
+                <option value="dracula">Dracula</option>
+                <option value="one-dark">One Dark Pro</option>
+                <option value="nord">Nord</option>
+                <option value="cyberpunk">Cyberpunk Neon</option>
+                <option value="monokai">Monokai Pro</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Font Family</label>
+                <p>Monospace font for terminal emulation</p>
+              </div>
+              <input type="text" id="setting-font-family" class="form-input" value="Consolas, 'Cascadia Code', 'Fira Code', monospace">
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Font Size</label>
+                <p>Size of terminal text in pixels</p>
+              </div>
+              <input type="number" id="setting-font-size" class="form-input" min="10" max="28" value="14">
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Cursor Style</label>
+                <p>Terminal cursor representation</p>
+              </div>
+              <select id="setting-cursor-style" class="form-select">
+                <option value="block">Block (█)</option>
+                <option value="underline">Underline (_)</option>
+                <option value="bar">Vertical Bar (|)</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Cursor Blinking</label>
+                <p>Animate blinking cursor</p>
+              </div>
+              <input type="checkbox" id="setting-cursor-blink" class="form-checkbox" checked>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-header-flex">
+              <h3>Cloud Sync (Vercel Backend)</h3>
+              <span class="cloud-status-badge" id="cloud-sync-status">Not Configured</span>
+            </div>
+            <p class="section-desc">Sync your saved SSH hosts, snippets, and settings seamlessly across all devices (Windows, macOS Apple Silicon, Linux) via your Vercel-hosted API.</p>
+            
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>LuluaX Cloud Backend URL</label>
+                <p>Configured endpoint for synchronization</p>
+              </div>
+              <input type="text" id="setting-cloud-url" class="form-input" placeholder="https://www.luluax-service.duckdns.org">
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Sync Key / Secret Token</label>
+                <p>Private encryption/access key for your cloud sync profile</p>
+              </div>
+              <input type="password" id="setting-cloud-key" class="form-input" placeholder="e.g. my-secret-sync-key-2026">
+            </div>
+
+            <div class="cloud-actions-row">
+              <button type="button" class="btn btn-secondary" id="btn-cloud-push">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span>Push to Cloud</span>
+              </button>
+              <button type="button" class="btn btn-secondary" id="btn-cloud-pull">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Pull from Cloud</span>
+              </button>
+              <span id="cloud-sync-msg" class="cloud-sync-message"></span>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <h3>Reverse Engineering Inspection (REA MCP Server)</h3>
+            <div class="rea-summary-box">
+              <div class="rea-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <span>Inspected with MCP Server REA</span>
+              </div>
+              <p>Source target inspected: <code>C:\Users\robyk\AppData\Local\Programs\Termius</code></p>
+              <ul>
+                <li><strong>Target:</strong> Termius.exe (Electron v10.2.1, ASAR container)</li>
+                <li><strong>Electron Fuses:</strong> RunAsNode: enabled, EmbeddedAsarIntegrityValidation: enabled</li>
+                <li><strong>Native Components:</strong> libssh2.dll & termius.node, node-pty (winpty-agent.exe), keytar.node</li>
+                <li><strong>LuluaX-Term Implementation:</strong> Pure JS SSH2 Client, Windows ConPTY & macOS Apple Silicon (arm64 zsh) PTY, full xterm.js terminal engine, and Vercel Cloud Sync.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+            <span id="save-settings-indicator" class="save-indicator"></span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: ADD / EDIT HOST -->
+  <div class="modal-backdrop" id="modal-host">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-host-title">Add New Host</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-host')">&times;</button>
+      </div>
+
+      <!-- Host Type Tabs -->
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-host-type="ssh" id="tab-btn-ssh">SSH Remote Host</button>
+        <button class="modal-tab" data-host-type="local" id="tab-btn-local">Local Windows Shell</button>
+      </div>
+
+      <form id="form-host" onsubmit="event.preventDefault(); app.saveHost();">
+        <input type="hidden" id="host-id">
+        <input type="hidden" id="host-type" value="ssh">
+
+        <div class="form-group">
+          <label>Display Label *</label>
+          <input type="text" id="host-label" class="form-input" placeholder="e.g. Ubuntu Production Server" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group col-7">
+            <label>Group / Category</label>
+            <input type="text" id="host-group" class="form-input" placeholder="e.g. Cloud, HomeLab, Work" value="Default">
+          </div>
+          <div class="form-group col-5">
+            <label>Badge Color</label>
+            <div class="color-picker-row">
+              <input type="color" id="host-color" class="form-color" value="#7b61ff">
+              <span class="color-label" id="color-hex-label">#7b61ff</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SSH Fields -->
+        <div id="section-ssh-fields">
+          <div class="form-row">
+            <div class="form-group col-8">
+              <label>Hostname / IP Address *</label>
+              <input type="text" id="host-hostname" class="form-input" placeholder="192.168.1.100 or server.com">
+            </div>
+            <div class="form-group col-4">
+              <label>Port</label>
+              <input type="number" id="host-port" class="form-input" value="22">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Username *</label>
+            <input type="text" id="host-username" class="form-input" placeholder="root, ubuntu, etc.">
+          </div>
+
+          <div class="form-group">
+            <label>Authentication Type</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="authType" value="password" checked onchange="app.toggleAuthType('password')">
+                <span>Password</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="authType" value="key" onchange="app.toggleAuthType('key')">
+                <span>Private Key (SSH Key)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" id="group-password">
+            <label>Password</label>
+            <input type="password" id="host-password" class="form-input" placeholder="Enter SSH password">
+          </div>
+
+          <div id="group-key" style="display:none">
+            <div class="form-group">
+              <label>Private Key (OpenSSH, PEM, RSA, Ed25519)</label>
+              <textarea id="host-key" class="form-textarea" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>Key Passphrase (optional)</label>
+              <input type="password" id="host-passphrase" class="form-input" placeholder="Passphrase for encrypted key">
+            </div>
+          </div>
+        </div>
+
+        <!-- Local Shell Fields -->
+        <div id="section-local-fields" style="display:none">
+          <div class="form-group">
+            <label>Shell Environment</label>
+            <select id="host-shell-type" class="form-select">
+              <option value="powershell">Windows PowerShell (powershell.exe)</option>
+              <option value="cmd">Windows Command Prompt (cmd.exe)</option>
+              <option value="gitbash">Git Bash (bash.exe)</option>
+              <option value="wsl">WSL (wsl.exe)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btn-test-connection">Test Connection</button>
+          <div class="footer-right">
+            <button type="button" class="btn btn-text" onclick="app.closeModal('modal-host')">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Host</button>
+          </div>
+        </div>
+        <div id="test-connection-result" class="test-result"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD / EDIT SNIPPET -->
+  <div class="modal-backdrop" id="modal-snippet">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-snippet-title">New Snippet</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-snippet')">&times;</button>
+      </div>
+
+      <form id="form-snippet" onsubmit="event.preventDefault(); app.saveSnippet();">
+        <input type="hidden" id="snippet-id">
+        <div class="form-group">
+          <label>Title *</label>
+          <input type="text" id="snippet-title" class="form-input" placeholder="e.g. Restart Nginx & View Logs" required>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <input type="text" id="snippet-category" class="form-input" placeholder="e.g. Docker, System, Git" value="General">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="snippet-desc" class="form-input" placeholder="Brief note about what this does">
+        </div>
+        <div class="form-group">
+          <label>Command / Script *</label>
+          <textarea id="snippet-command" class="form-textarea" rows="4" placeholder="systemctl restart nginx && tail -f /var/log/nginx/error.log" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-text" onclick="app.closeModal('modal-snippet')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Snippet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Vendor Scripts -->
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/addon-web-links.js"></script>
+  <!-- Main Application Script -->
+  <script src="app.js"></script>
+</body>
+</html>

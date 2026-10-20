@@ -1,0 +1,16 @@
+{
+  "theme": "termius-dark",
+  "fontFamily": "Consolas, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+  "fontSize": 14,
+  "lineHeight": 1.25,
+  "cursorBlink": true,
+  "cursorStyle": "block",
+  "scrollback": 10000,
+  "bellSound": false,
+  "copyOnSelect": true,
+  "defaultShell": "powershell",
+  "cloudApiUrl": "https://www.luluax-service.duckdns.org",
+  "cloudSyncKey": "",
+  "cloudAutoSync": false,
+  "lastCloudSync": 1792521169347
+}
