@@ -1809,3 +1809,29 @@ input:checked + .slider:before {
   white-space: pre-wrap;
   font-family: inherit;
 }
+
+/* Global Error Box Styles */
+.error-detail-box {
+  background-color: #080a0f;
+  border: 1px solid rgba(255, 82, 82, 0.35);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.error-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.error-detail-text {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: #ff867c;
+  line-height: 1.5;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

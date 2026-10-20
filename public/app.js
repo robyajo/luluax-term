@@ -179,6 +179,7 @@ class LuluaXTermApp {
     await this.loadKeys();
     await this.loadLocalDrives();
     this.setupAutoUpdater();
+    this.startConnectionHeartbeat();
 
     // Auto-resize terminals when window size changes
     window.addEventListener('resize', () => {
@@ -387,8 +388,27 @@ class LuluaXTermApp {
     if (settingsUser) settingsUser.textContent = `${this.currentUser.name || 'User'} (${this.currentUser.email})`;
   }
 
-  logout() {
+  async logout() {
     if (!confirm('Apakah Anda yakin ingin keluar / logout?')) return;
+    const serverUrl = this.settings.cloudApiUrl || 'https://www.luluax-service.duckdns.org';
+    const savedToken = localStorage.getItem('luluax_auth_token');
+
+    // Panggil API logout backend untuk membersihkan sesi di server
+    if (savedToken) {
+      try {
+        await fetch(`${serverUrl}/api/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${savedToken}`
+          }
+        });
+      } catch (e) {
+        console.warn('Backend logout warning:', e);
+      }
+    }
+
+    // Bersihkan sesi lokal
     localStorage.removeItem('luluax_auth_token');
     this.currentUser = null;
     document.getElementById('user-display-name').textContent = 'Belum Masuk';
@@ -396,8 +416,94 @@ class LuluaXTermApp {
     document.getElementById('user-avatar-initials').textContent = '?';
     const settingsUser = document.getElementById('settings-user-info');
     if (settingsUser) settingsUser.textContent = 'Belum login';
+
+    // Kunci kembali dan tampilkan form login
     document.getElementById('auth-overlay').style.display = 'flex';
     this.switchAuthMode('login');
+  }
+
+  startConnectionHeartbeat() {
+    setInterval(() => this.checkServerConnectivity(true), 12000);
+
+    window.addEventListener('offline', () => {
+      this.serverOnline = false;
+      this.showGlobalError(
+        'Koneksi Internet Terputus',
+        'Komputer Anda kehilangan koneksi internet. Aplikasi memerlukan koneksi aktif ke server backend untuk sinkronisasi data.',
+        'OFFLINE'
+      );
+    });
+
+    window.addEventListener('online', () => {
+      this.checkServerConnectivity(false);
+    });
+  }
+
+  async checkServerConnectivity(isBackground = false) {
+    const serverUrl = this.settings.cloudApiUrl || 'https://www.luluax-service.duckdns.org';
+    try {
+      const res = await fetch(`${serverUrl}/api/health`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        this.serverOnline = true;
+        const errModal = document.getElementById('modal-global-error');
+        if (errModal && errModal.classList.contains('active') && this.isConnectionError) {
+          errModal.classList.remove('active');
+          this.isConnectionError = false;
+        }
+        return true;
+      }
+      throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
+    } catch (err) {
+      this.serverOnline = false;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (!isBackground) {
+        this.isConnectionError = true;
+        this.showGlobalError(
+          'Koneksi ke Server Backend Terputus',
+          `Gagal menghubungi server cloud di ${serverUrl}.\nPastikan backend aktif dan komputer terhubung ke internet.`,
+          'ERR_CONNECTION_FAILED',
+          `Target URL: ${serverUrl}/api/health\nTimestamp: ${new Date().toISOString()}\nUser Agent: ${navigator.userAgent}\nError Detail: ${errorMsg}`
+        );
+      }
+      return false;
+    }
+  }
+
+  showGlobalError(title, desc, statusBadge, details) {
+    document.getElementById('global-error-title').textContent = title;
+    document.getElementById('global-error-desc').textContent = desc;
+    document.getElementById('global-error-status-badge').textContent = statusBadge || 'ERROR';
+
+    const fullDetail = details || `Timestamp: ${new Date().toISOString()}\nError: ${desc}\nTarget Server: ${this.settings.cloudApiUrl || 'https://www.luluax-service.duckdns.org'}`;
+    document.getElementById('global-error-content').textContent = fullDetail;
+    this.lastGlobalErrorText = `[LuluaX-Term Error Report]\nTitle: ${title}\nStatus: ${statusBadge}\nDescription: ${desc}\n\n${fullDetail}`;
+
+    document.getElementById('modal-global-error').classList.add('active');
+  }
+
+  copyGlobalError() {
+    const textToCopy = this.lastGlobalErrorText || document.getElementById('global-error-content').textContent;
+    navigator.clipboard.writeText(textToCopy);
+    const btn = document.getElementById('btn-copy-global-error');
+    btn.textContent = '✓ Error Berhasil Disalin!';
+    setTimeout(() => btn.textContent = '📋 Salin Pesan Error', 2500);
+  }
+
+  async retryServerConnection() {
+    const btn = document.getElementById('btn-retry-global-error');
+    btn.disabled = true;
+    btn.textContent = 'Memeriksa...';
+
+    const ok = await this.checkServerConnectivity(false);
+    btn.disabled = false;
+    btn.textContent = '🔄 Hubungkan Ulang';
+
+    if (ok) {
+      document.getElementById('modal-global-error').classList.remove('active');
+      this.isConnectionError = false;
+      alert('✓ Berhasil terhubung kembali ke server cloud backend!');
+    }
   }
   async detectSystem() {
     try {

@@ -788,6 +788,43 @@
     </div>
   </div>
 
+  <!-- MODAL: GLOBAL ERROR & CONNECTION LOST (WITH COPY ERROR BUTTON) -->
+  <div class="modal-backdrop" id="modal-global-error">
+    <div class="modal-dialog" style="max-width: 540px; border-color: var(--danger)">
+      <div class="modal-header" style="border-bottom-color: rgba(255, 82, 82, 0.2)">
+        <div style="display:flex; align-items:center; gap:8px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--danger)">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <h3 id="global-error-title" style="color:var(--danger)">Koneksi ke Server Terputus</h3>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-global-error')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="global-error-desc" style="font-size:13px; color:var(--text-secondary); margin-bottom:12px">
+          Aplikasi harus selalu terhubung ke server backend cloud untuk menjaga integritas sesi dan sinkronisasi data.
+        </p>
+        <div class="error-detail-box">
+          <div class="error-detail-header">
+            <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase">Detail Error Teknis:</span>
+            <span id="global-error-status-badge" class="badge-status status-5xx">Connection Failed</span>
+          </div>
+          <pre class="error-detail-text" id="global-error-content">Memuat informasi error...</pre>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between">
+        <button type="button" class="btn btn-secondary" id="btn-copy-global-error" onclick="app.copyGlobalError()">
+          📋 Salin Pesan Error
+        </button>
+        <button type="button" class="btn btn-primary" id="btn-retry-global-error" onclick="app.retryServerConnection()">
+          🔄 Hubungkan Ulang
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- FULLSCREEN AUTH OVERLAY (LOGIN & REGISTER GUARD) -->
   <div class="auth-overlay" id="auth-overlay" style="display: flex;">
     <div class="auth-card">
