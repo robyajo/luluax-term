@@ -1963,3 +1963,138 @@ input:checked + .slider:before {
   50% { box-shadow: 0 0 18px rgba(245, 158, 11, 0.8); }
   100% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
 }
+/* Folders & Drag-Drop Organization (Termius Parity) */
+.folders-shelf {
+  padding: 14px 24px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.folder-box {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.folder-box.drag-over {
+  border: 2px dashed #7b61ff !important;
+  background-color: rgba(123, 97, 255, 0.08) !important;
+  box-shadow: 0 0 16px rgba(123, 97, 255, 0.3);
+  transform: scale(1.008);
+}
+
+.folder-header {
+  padding: 12px 18px;
+  background-color: rgba(255, 255, 255, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.folder-header:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.folder-title-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.folder-icon {
+  font-size: 18px;
+}
+
+.folder-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.folder-count-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-chevron {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.folder-box.collapsed .folder-chevron {
+  transform: rotate(-90deg);
+}
+
+.folder-box.collapsed .folder-content {
+  display: none;
+}
+
+.folder-content {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  min-height: 70px;
+}
+
+.folder-drop-empty {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.root-drop-zone {
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin: 12px 24px 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background-color: rgba(255, 255, 255, 0.01);
+  transition: all 0.2s ease;
+}
+
+.root-drop-zone.drag-over {
+  border-color: var(--cyan);
+  background-color: rgba(0, 210, 255, 0.08);
+  color: var(--cyan);
+}
+
+.host-card {
+  cursor: grab;
+}
+
+.host-card:active {
+  cursor: grabbing;
+}
+
+.host-card.dragging {
+  opacity: 0.45;
+  border-style: dashed;
+  transform: scale(0.98);
+}

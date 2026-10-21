@@ -13,7 +13,7 @@ import pty, { type IPty } from 'node-pty';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import crypto from 'crypto';
-import type { HostItem, SnippetItem, TunnelItem, SshKeyItem, SettingsData, LocalFileEntry } from './types.js';
+import type { HostItem, SnippetItem, TunnelItem, SshKeyItem, SettingsData, LocalFileEntry, FolderItem, AccountRegistry } from './types.js';
 
 const PORT: number = parseInt(process.env.PORT || '3980', 10);
 const app = express();
@@ -310,6 +310,141 @@ function parseSshConfig(content: string): Array<Partial<HostItem> & { identityFi
 }
 
 // -------------------------------------------------------------
+// Per-Account Registry Manager (registry-<accountId>.json)
+// -------------------------------------------------------------
+function getRegistryFilePath(accountId: string): string {
+  const safeId = accountId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return path.join(DATA_DIR, `registry-${safeId}.json`);
+}
+
+function loadAccountRegistry(accountId: string): AccountRegistry {
+  const regPath = getRegistryFilePath(accountId);
+  if (fs.existsSync(regPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(regPath, 'utf-8')) as AccountRegistry;
+    } catch {}
+  }
+  return {
+    accountId,
+    version: 1,
+    updatedAt: Date.now(),
+    folders: readData<FolderItem[]>('folders.json', []),
+    hosts: readData<HostItem[]>('hosts.json', []),
+    tunnels: readData<TunnelItem[]>('tunnels.json', []),
+    keys: readData<SshKeyItem[]>('keys.json', []),
+    snippets: readData<SnippetItem[]>('snippets.json', []),
+    settings: readData<SettingsData>('settings.json', {})
+  };
+}
+
+function saveAccountRegistry(registry: AccountRegistry): void {
+  const regPath = getRegistryFilePath(registry.accountId);
+  try {
+    fs.writeFileSync(regPath, JSON.stringify(registry, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving account registry:', err);
+  }
+}
+
+function syncActiveRegistry(accountId = 'default-user'): void {
+  const registry: AccountRegistry = {
+    accountId,
+    version: 1,
+    updatedAt: Date.now(),
+    folders: readData<FolderItem[]>('folders.json', []),
+    hosts: readData<HostItem[]>('hosts.json', []),
+    tunnels: readData<TunnelItem[]>('tunnels.json', []),
+    keys: readData<SshKeyItem[]>('keys.json', []),
+    snippets: readData<SnippetItem[]>('snippets.json', []),
+    settings: readData<SettingsData>('settings.json', {})
+  };
+  saveAccountRegistry(registry);
+}
+
+// -------------------------------------------------------------
+// Folders API (Group & Organize Hosts)
+// -------------------------------------------------------------
+app.get('/api/folders', (_req: Request, res: Response) => {
+  const folders = readData<FolderItem[]>('folders.json', []);
+  res.json({ success: true, folders });
+});
+
+app.post('/api/folders', (req: Request, res: Response) => {
+  const folders = readData<FolderItem[]>('folders.json', []);
+  const body = req.body as Partial<FolderItem>;
+  const newFolder: FolderItem = {
+    id: body.id || `folder_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    name: body.name || 'New Folder',
+    color: body.color || '#7b61ff',
+    icon: body.icon || '📁',
+    parentId: body.parentId || null,
+    orderIndex: typeof body.orderIndex === 'number' ? body.orderIndex : folders.length,
+    collapsed: Boolean(body.collapsed),
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  folders.push(newFolder);
+  writeData('folders.json', folders);
+  syncActiveRegistry();
+  res.json({ success: true, folder: newFolder });
+});
+
+app.put('/api/folders/:id', (req: Request, res: Response) => {
+  const folderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const folders = readData<FolderItem[]>('folders.json', []);
+  const index = folders.findIndex(f => f.id === folderId);
+  if (index === -1) return res.status(404).json({ success: false, error: 'Folder not found' });
+  folders[index] = { ...folders[index], ...(req.body as Partial<FolderItem>), id: folders[index].id, updatedAt: Date.now() };
+  writeData('folders.json', folders);
+  syncActiveRegistry();
+  res.json({ success: true, folder: folders[index] });
+});
+
+app.delete('/api/folders/:id', (req: Request, res: Response) => {
+  const folderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  let folders = readData<FolderItem[]>('folders.json', []);
+  folders = folders.filter(f => f.id !== folderId);
+  writeData('folders.json', folders);
+
+  // Unlink hosts in this folder
+  const hosts = readData<HostItem[]>('hosts.json', []);
+  let hostsModified = false;
+  for (const h of hosts) {
+    if (h.folderId === folderId) {
+      h.folderId = null;
+      hostsModified = true;
+    }
+  }
+  if (hostsModified) writeData('hosts.json', hosts);
+
+  syncActiveRegistry();
+  res.json({ success: true });
+});
+
+app.get('/api/registry', (req: Request, res: Response) => {
+  const accountId = typeof req.query.accountId === 'string' ? req.query.accountId : 'default-user';
+  const registry = loadAccountRegistry(accountId);
+  res.json({ success: true, registry });
+});
+
+app.post('/api/registry/activate', (req: Request, res: Response) => {
+  const reqBody: unknown = req.body;
+  const accountId = (reqBody && typeof reqBody === 'object' && 'accountId' in reqBody && typeof reqBody.accountId === 'string')
+    ? reqBody.accountId
+    : 'default-user';
+  const registry = loadAccountRegistry(accountId);
+
+  if (Array.isArray(registry.folders)) writeData('folders.json', registry.folders);
+  if (Array.isArray(registry.hosts)) writeData('hosts.json', registry.hosts);
+  if (Array.isArray(registry.tunnels)) writeData('tunnels.json', registry.tunnels);
+  if (Array.isArray(registry.keys)) writeData('keys.json', registry.keys);
+  if (Array.isArray(registry.snippets)) writeData('snippets.json', registry.snippets);
+  if (registry.settings && typeof registry.settings === 'object') writeData('settings.json', registry.settings);
+
+  res.json({ success: true, message: `Active workspace switched to account ${accountId}`, registry });
+});
+
+// -------------------------------------------------------------
 // Hosts API
 // -------------------------------------------------------------
 app.get('/api/hosts', (_req: Request, res: Response) => {
@@ -332,6 +467,8 @@ app.post('/api/hosts', (req: Request, res: Response) => {
     privateKey: body.privateKey || '',
     passphrase: body.passphrase || '',
     keyId: body.keyId || '',
+    folderId: body.folderId !== undefined ? body.folderId : null,
+    orderIndex: typeof body.orderIndex === 'number' ? body.orderIndex : hosts.length,
     group: body.group || 'Default',
     color: body.color || '#7b61ff',
     shellType: body.shellType || (os.platform() === 'darwin' ? 'zsh' : 'powershell'),
@@ -342,27 +479,44 @@ app.post('/api/hosts', (req: Request, res: Response) => {
   };
   hosts.push(newHost);
   writeData('hosts.json', hosts);
+  syncActiveRegistry();
   res.json({ success: true, host: newHost });
 });
 
 app.put('/api/hosts/:id', (req: Request, res: Response) => {
+  const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const hosts = readData<HostItem[]>('hosts.json', []);
-  const index = hosts.findIndex(h => h.id === req.params.id);
+  const index = hosts.findIndex(h => h.id === hostId);
   if (index === -1) {
     return res.status(404).json({ success: false, error: 'Host not found' });
   }
   hosts[index] = { ...hosts[index], ...(req.body as Partial<HostItem>), id: hosts[index].id };
   writeData('hosts.json', hosts);
+  syncActiveRegistry();
   res.json({ success: true, host: hosts[index] });
 });
 
-app.delete('/api/hosts/:id', (req: Request, res: Response) => {
-  let hosts = readData<HostItem[]>('hosts.json', []);
-  hosts = hosts.filter(h => h.id !== req.params.id);
+app.post('/api/hosts/:id/move', (req: Request, res: Response) => {
+  const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const reqBody: unknown = req.body;
+  const folderId = (reqBody && typeof reqBody === 'object' && 'folderId' in reqBody) ? (reqBody.folderId as string | null) : null;
+  const hosts = readData<HostItem[]>('hosts.json', []);
+  const host = hosts.find(h => h.id === hostId);
+  if (!host) return res.status(404).json({ success: false, error: 'Host not found' });
+  host.folderId = folderId;
   writeData('hosts.json', hosts);
-  res.json({ success: true });
+  syncActiveRegistry();
+  res.json({ success: true, host });
 });
 
+app.delete('/api/hosts/:id', (req: Request, res: Response) => {
+  const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  let hosts = readData<HostItem[]>('hosts.json', []);
+  hosts = hosts.filter(h => h.id !== hostId);
+  writeData('hosts.json', hosts);
+  syncActiveRegistry();
+  res.json({ success: true });
+});
 // Import ~/.ssh/config (Termius Parity)
 app.post('/api/hosts/import-ssh-config', (req: Request, res: Response) => {
   const reqBody: unknown = req.body;
@@ -594,7 +748,10 @@ interface CloudPullResult {
   success?: boolean;
   error?: string;
   data?: {
+    folders?: FolderItem[];
     hosts?: HostItem[];
+    tunnels?: TunnelItem[];
+    keys?: SshKeyItem[];
     snippets?: SnippetItem[];
     settings?: SettingsData;
   };
@@ -608,7 +765,10 @@ app.post('/api/cloud/push', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Cloud API URL and Sync Key are required' });
   }
 
+  const folders = readData<FolderItem[]>('folders.json', []);
   const hosts = readData<HostItem[]>('hosts.json', []);
+  const tunnels = readData<TunnelItem[]>('tunnels.json', []);
+  const keys = readData<SshKeyItem[]>('keys.json', []);
   const snippets = readData<SnippetItem[]>('snippets.json', []);
   const settings = readData<SettingsData>('settings.json', {});
 
@@ -616,9 +776,8 @@ app.post('/api/cloud/push', async (req: Request, res: Response) => {
     syncKey,
     device: `${os.hostname()} (${os.platform()} ${os.arch()})`,
     timestamp: Date.now(),
-    data: { hosts, snippets, settings }
+    data: { folders, hosts, tunnels, keys, snippets, settings }
   };
-
   try {
     const targetUrl = cloudApiUrl.replace(/\/+$/, '') + '/api/sync/push';
     const response = await fetch(targetUrl, {
@@ -669,15 +828,18 @@ app.post('/api/cloud/pull', async (req: Request, res: Response) => {
     }
 
     if (data.data) {
+      if (Array.isArray(data.data.folders)) writeData('folders.json', data.data.folders);
       if (Array.isArray(data.data.hosts)) writeData('hosts.json', data.data.hosts);
+      if (Array.isArray(data.data.tunnels)) writeData('tunnels.json', data.data.tunnels);
+      if (Array.isArray(data.data.keys)) writeData('keys.json', data.data.keys);
       if (Array.isArray(data.data.snippets)) writeData('snippets.json', data.data.snippets);
       if (data.data.settings && typeof data.data.settings === 'object') {
         const localSettings = readData<SettingsData>('settings.json', {});
         const mergedSettings = { ...localSettings, ...data.data.settings, lastCloudSync: Date.now() };
         writeData('settings.json', mergedSettings);
       }
+      syncActiveRegistry(syncKey);
     }
-
     res.json({ success: true, message: 'Data pulled from cloud and updated locally!', timestamp: Date.now() });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);

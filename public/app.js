@@ -163,7 +163,9 @@ class LuluaXTermApp {
     this.broadcastEnabled = false;
     this.currentEditingRemoteFile = null;
     this.pendingSnippetCmd = null;
-
+    this.folders = [];
+    this.draggedHostId = null;
+    this.syncDebounceTimer = null;
     this.currentUser = null;
     this.authMode = 'login';
     this.serverOnline = false;
@@ -921,10 +923,21 @@ class LuluaXTermApp {
   }
 
   // ----------------------------------------------------------------
-  // Hosts
-  // ----------------------------------------------------------------
+  async loadFolders() {
+    try {
+      const res = await fetch('/api/folders');
+      const data = await res.json();
+      if (data.success) {
+        this.folders = data.folders || [];
+      }
+    } catch (e) {
+      console.warn('Folders load error:', e);
+    }
+  }
+
   async loadHosts() {
     try {
+      await this.loadFolders();
       const res = await fetch('/api/hosts');
       const data = await res.json();
       if (data.success) {
@@ -957,7 +970,30 @@ class LuluaXTermApp {
 
   renderHosts(searchTerm = '') {
     const grid = document.getElementById('hosts-grid');
-    grid.innerHTML = '';
+    const foldersShelf = document.getElementById('folders-shelf');
+    const rootZone = document.getElementById('root-drop-zone');
+
+    if (grid) grid.innerHTML = '';
+    if (foldersShelf) foldersShelf.innerHTML = '';
+
+    // Setup Root Drop Zone
+    if (rootZone) {
+      rootZone.ondragover = (e) => {
+        e.preventDefault();
+        rootZone.classList.add('drag-over');
+      };
+      rootZone.ondragleave = () => {
+        rootZone.classList.remove('drag-over');
+      };
+      rootZone.ondrop = async (e) => {
+        e.preventDefault();
+        rootZone.classList.remove('drag-over');
+        const hostId = e.dataTransfer.getData('text/plain') || this.draggedHostId;
+        if (hostId) {
+          await this.moveHostToFolder(hostId, null);
+        }
+      };
+    }
 
     const query = searchTerm.toLowerCase().trim();
     const filtered = this.hosts.filter(h => {
@@ -970,65 +1006,270 @@ class LuluaXTermApp {
       return matchGroup && matchSearch;
     });
 
-    if (filtered.length === 0) {
-      grid.innerHTML = `
-        <div style="grid-column: 1/-1; text-align: center; padding: 48px; color: var(--text-muted)">
-          <p>No hosts found matching your criteria.</p>
-        </div>
-      `;
+    // 1. Render Folders
+    if (foldersShelf && this.folders.length > 0) {
+      this.folders.forEach(folder => {
+        const folderHosts = filtered.filter(h => h.folderId === folder.id);
+        const folderBox = document.createElement('div');
+        folderBox.className = `folder-box ${folder.collapsed ? 'collapsed' : ''}`;
+        folderBox.id = `folder-box-${folder.id}`;
+
+        folderBox.innerHTML = `
+          <div class="folder-header" onclick="app.toggleFolderCollapse('${folder.id}')">
+            <div class="folder-title-left">
+              <span class="folder-chevron">▼</span>
+              <span class="folder-icon">${folder.icon || '📁'}</span>
+              <span class="folder-name" style="color: ${folder.color || 'var(--text-primary)'}">${this.escapeHtml(folder.name)}</span>
+              <span class="folder-count-badge">${folderHosts.length} hosts</span>
+            </div>
+            <div class="folder-actions" onclick="event.stopPropagation()">
+              <button class="btn-card-icon" title="Edit Folder" onclick="app.openFolderModal('${folder.id}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+              </button>
+              <button class="btn-card-icon" title="Hapus Folder" onclick="app.deleteFolder('${folder.id}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="folder-content" id="folder-content-${folder.id}">
+          </div>
+        `;
+
+        const contentGrid = folderBox.querySelector('.folder-content');
+        if (folderHosts.length === 0) {
+          contentGrid.innerHTML = `<div class="folder-drop-empty">Drag host ke sini untuk mengelompokkan ke "${this.escapeHtml(folder.name)}"</div>`;
+        } else {
+          folderHosts.forEach(h => {
+            contentGrid.appendChild(this.createHostCard(h));
+          });
+        }
+
+        // Folder Drag & Drop target
+        folderBox.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          folderBox.classList.add('drag-over');
+        });
+        folderBox.addEventListener('dragleave', () => {
+          folderBox.classList.remove('drag-over');
+        });
+        folderBox.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          folderBox.classList.remove('drag-over');
+          const hostId = e.dataTransfer.getData('text/plain') || this.draggedHostId;
+          if (hostId) {
+            await this.moveHostToFolder(hostId, folder.id);
+          }
+        });
+
+        foldersShelf.appendChild(folderBox);
+      });
+    }
+
+    // 2. Render Root (Unassigned) Hosts
+    const rootHosts = filtered.filter(h => !h.folderId || !this.folders.some(f => f.id === h.folderId));
+
+    if (rootHosts.length === 0 && (!this.folders || this.folders.length === 0)) {
+      if (grid) {
+        grid.innerHTML = `
+          <div style="grid-column: 1/-1; text-align: center; padding: 48px; color: var(--text-muted)">
+            <p>Belum ada host. Klik "+ Add Host" untuk menambahkan server baru.</p>
+          </div>
+        `;
+      }
       return;
     }
 
-    filtered.forEach(h => {
-      const card = document.createElement('div');
-      card.className = 'host-card';
-      
-      const isSSH = h.type === 'ssh';
-      const targetText = isSSH ? `${h.username}@${h.hostname}:${h.port || 22}` : `Windows Local Shell (${h.shellType || 'powershell'})`;
-      const color = h.color || '#7b61ff';
+    if (grid) {
+      rootHosts.forEach(h => {
+        grid.appendChild(this.createHostCard(h));
+      });
+    }
+  }
 
-      card.innerHTML = `
-        <div class="host-card-border" style="background-color: ${color}"></div>
-        <div class="host-card-header">
-          <div class="host-card-title-group">
-            <span class="host-label">${this.escapeHtml(h.label)}</span>
-            <span class="host-target">${this.escapeHtml(targetText)}</span>
-          </div>
-          <span class="host-group-tag">${this.escapeHtml(h.group || 'Default')}</span>
-        </div>
+  createHostCard(h) {
+    const card = document.createElement('div');
+    card.className = 'host-card';
+    card.setAttribute('draggable', 'true');
+    card.dataset.hostId = h.id;
 
-        <div class="host-card-actions">
-          <button class="host-btn-connect" onclick="app.connectHost('${h.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-            <span>Connect</span>
-          </button>
-          <div class="host-actions-secondary">
-            ${isSSH ? `
-              <button class="btn-card-icon" title="Open SFTP Files" onclick="app.quickSftp('${h.id}')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
-              </button>
-            ` : ''}
-            <button class="btn-card-icon" title="Edit Host" onclick="app.openHostModal('${h.id}')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-              </svg>
-            </button>
-            <button class="btn-card-icon" title="Delete Host" onclick="app.deleteHost('${h.id}')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-            </button>
-          </div>
-        </div>
-      `;
-      grid.appendChild(card);
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', h.id);
+      this.draggedHostId = h.id;
+      card.classList.add('dragging');
+      const rootZone = document.getElementById('root-drop-zone');
+      if (rootZone && h.folderId) rootZone.style.display = 'flex';
     });
+
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      this.draggedHostId = null;
+      const rootZone = document.getElementById('root-drop-zone');
+      if (rootZone) rootZone.style.display = 'none';
+    });
+
+    const isSSH = h.type === 'ssh';
+    const targetText = isSSH ? `${h.username}@${h.hostname}:${h.port || 22}` : `Windows Local Shell (${h.shellType || 'powershell'})`;
+    const color = h.color || '#7b61ff';
+    const folder = this.folders.find(f => f.id === h.folderId);
+
+    card.innerHTML = `
+      <div class="host-card-border" style="background-color: ${color}"></div>
+      <div class="host-card-header">
+        <div class="host-card-title-group">
+          <div style="display:flex; align-items:center; gap:6px">
+            ${folder ? `<span style="font-size:12px;" title="Folder: ${this.escapeHtml(folder.name)}">${folder.icon || '📁'}</span>` : ''}
+            <span class="host-label">${this.escapeHtml(h.label)}</span>
+          </div>
+          <span class="host-target">${this.escapeHtml(targetText)}</span>
+        </div>
+        <span class="host-group-tag">${this.escapeHtml(h.group || 'Default')}</span>
+      </div>
+
+      <div class="host-card-actions">
+        <button class="host-btn-connect" onclick="app.connectHost('${h.id}')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Connect</span>
+        </button>
+        <div class="host-actions-secondary">
+          ${isSSH ? `
+            <button class="btn-card-icon" title="Open SFTP Files" onclick="app.quickSftp('${h.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </button>
+          ` : ''}
+          <button class="btn-card-icon" title="Edit Host" onclick="app.openHostModal('${h.id}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+          <button class="btn-card-icon" title="Delete Host" onclick="app.deleteHost('${h.id}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  openFolderModal(folderId = null) {
+    const title = document.getElementById('modal-folder-title');
+    document.getElementById('form-folder').reset();
+    if (folderId) {
+      const f = this.folders.find(x => x.id === folderId);
+      if (!f) return;
+      title.textContent = 'Edit Folder';
+      document.getElementById('folder-id').value = f.id;
+      document.getElementById('folder-name').value = f.name;
+      document.getElementById('folder-icon').value = f.icon || '📁';
+      document.getElementById('folder-color').value = f.color || '#7b61ff';
+      document.getElementById('folder-color-label').textContent = f.color || '#7b61ff';
+    } else {
+      title.textContent = 'Buat Folder Baru';
+      document.getElementById('folder-id').value = '';
+      document.getElementById('folder-color').value = '#7b61ff';
+      document.getElementById('folder-color-label').textContent = '#7b61ff';
+    }
+    document.getElementById('modal-folder').classList.add('active');
+  }
+
+  async saveFolder() {
+    const id = document.getElementById('folder-id').value;
+    const payload = {
+      name: document.getElementById('folder-name').value,
+      icon: document.getElementById('folder-icon').value,
+      color: document.getElementById('folder-color').value
+    };
+
+    try {
+      const url = id ? `/api/folders/${id}` : '/api/folders';
+      const method = id ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.closeModal('modal-folder');
+        await this.loadHosts();
+        this.triggerDebouncedSync();
+      } else {
+        alert('Gagal menyimpan folder: ' + data.error);
+      }
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async deleteFolder(folderId) {
+    if (!confirm('Hapus folder ini? Host di dalamnya akan dipindahkan ke daftar utama (root).')) return;
+    try {
+      const res = await fetch(`/api/folders/${folderId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        await this.loadHosts();
+        this.triggerDebouncedSync();
+      }
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  toggleFolderCollapse(folderId) {
+    const folder = this.folders.find(f => f.id === folderId);
+    if (folder) {
+      folder.collapsed = !folder.collapsed;
+      const el = document.getElementById(`folder-box-${folderId}`);
+      if (el) el.classList.toggle('collapsed', folder.collapsed);
+      fetch(`/api/folders/${folderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collapsed: folder.collapsed })
+      }).catch(() => {});
+    }
+  }
+
+  async moveHostToFolder(hostId, folderId) {
+    try {
+      const res = await fetch(`/api/hosts/${hostId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const host = this.hosts.find(h => h.id === hostId);
+        if (host) host.folderId = folderId;
+        this.renderHosts(document.getElementById('host-search')?.value || '');
+        this.triggerDebouncedSync();
+      }
+    } catch (err) {
+      console.error('Move host error:', err);
+    }
+  }
+
+  triggerDebouncedSync() {
+    if (this.syncDebounceTimer) clearTimeout(this.syncDebounceTimer);
+    this.syncDebounceTimer = setTimeout(() => {
+      const cloudUrl = this.settings?.cloudApiUrl;
+      const syncKey = this.settings?.cloudSyncKey;
+      if (cloudUrl && syncKey) {
+        this.pushToCloud().catch(() => {});
+      }
+    }, 1500);
   }
 
   openHostModal(hostId = null) {
@@ -1037,6 +1278,18 @@ class LuluaXTermApp {
     const resultBox = document.getElementById('test-connection-result');
     resultBox.className = 'test-result';
     resultBox.style.display = 'none';
+
+    // Populate Folder dropdown
+    const folderSelect = document.getElementById('host-folder-id');
+    if (folderSelect) {
+      folderSelect.innerHTML = '<option value="">-- Tanpa Folder (Root) --</option>';
+      (this.folders || []).forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = `${f.icon || '📁'} ${f.name}`;
+        folderSelect.appendChild(opt);
+      });
+    }
 
     // Populate Key Vault dropdown (Termius Parity)
     const keySelect = document.getElementById('host-key-id');
@@ -1083,9 +1336,9 @@ class LuluaXTermApp {
         document.getElementById('host-password').value = h.password || '';
         document.getElementById('host-key').value = h.privateKey || '';
         document.getElementById('host-passphrase').value = h.passphrase || '';
+        if (folderSelect) folderSelect.value = h.folderId || '';
         if (keySelect) keySelect.value = h.keyId || '';
         if (jumpSelect) jumpSelect.value = h.proxyJumpHostId || '';
-        document.getElementById('host-startup-script').value = h.startupScript || '';
         this.toggleAuthType(h.authType || 'password');
         document.querySelector(`input[name="authType"][value="${h.authType || 'password'}"]`).checked = true;
       }
@@ -1095,9 +1348,9 @@ class LuluaXTermApp {
       document.getElementById('host-id').value = '';
       document.getElementById('host-color').value = '#7b61ff';
       document.getElementById('color-hex-label').textContent = '#7b61ff';
+      if (folderSelect) folderSelect.value = '';
       if (keySelect) keySelect.value = '';
       if (jumpSelect) jumpSelect.value = '';
-      document.getElementById('host-startup-script').value = '';
       this.switchHostTypeTab('ssh');
       this.toggleAuthType('password');
     }
@@ -1178,7 +1431,8 @@ class LuluaXTermApp {
       label: document.getElementById('host-label').value,
       type: type,
       group: document.getElementById('host-group').value || 'Default',
-      color: document.getElementById('host-color').value || '#7b61ff'
+      color: document.getElementById('host-color').value || '#7b61ff',
+      folderId: document.getElementById('host-folder-id')?.value || null
     };
 
     if (type === 'ssh') {
@@ -1208,6 +1462,7 @@ class LuluaXTermApp {
       if (data.success) {
         this.closeModal('modal-host');
         await this.loadHosts();
+        this.triggerDebouncedSync();
       } else {
         alert('Failed to save host: ' + data.error);
       }

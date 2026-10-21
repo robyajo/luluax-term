@@ -39,6 +39,16 @@
       "en": "Automated Configuration Import: Detect and import existing server lists on your computer with a single click."
     },
     {
+      "type": "feature",
+      "id": "Pengelompokan Folder & Drag-and-Drop Host: Pengguna dapat membuat folder, menamai, memilih ikon dan warna, serta menyeret (drag and drop) kartu host ke dalam folder secara interaktif.",
+      "en": "Folder Grouping & Drag-and-Drop: Users can create custom folders with icons and colors, and interactively drag and drop host cards into folders."
+    },
+    {
+      "type": "feature",
+      "id": "Penyimpanan Registry Per Akun & Sinkronisasi Cloud: Seluruh folder, host, kunci, tunnel, dan pengaturan disimpan terisolasi per akun dan tersinkronisasi otomatis ke database cloud untuk sinkronisasi multi-device.",
+      "en": "Per-Account Registry & Cloud Database Sync: All folders, hosts, keys, tunnels, and settings are preserved in an account-scoped registry and synced to the cloud database across devices."
+    },
+    {
       "type": "update",
       "id": "Penampil Versi Terpasang & Lencana Pembaruan: Nomor versi rilis kini ditampilkan jelas di bilah navigasi dan lencana animasi akan muncul di kanan atas jika tersedia versi baru.",
       "en": "Installed Version Display & Update Badge: The installed version is now clearly shown on navigation bars, with an animated badge in the top-right corner when an update is available."

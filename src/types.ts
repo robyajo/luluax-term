@@ -10,6 +10,8 @@ export interface HostItem {
   privateKey?: string;
   passphrase?: string;
   keyId?: string;
+  folderId?: string | null;
+  orderIndex?: number;
   group?: string;
   color?: string;
   shellType?: string;
@@ -17,6 +19,18 @@ export interface HostItem {
   startupScript?: string;
   createdAt?: number;
   lastConnected?: number | null;
+}
+
+export interface FolderItem {
+  id: string;
+  name: string;
+  color?: string;
+  icon?: string;
+  parentId?: string | null;
+  orderIndex?: number;
+  collapsed?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface SnippetItem {
@@ -92,4 +106,16 @@ export interface ImportSshConfigResult {
   importedCount: number;
   skippedCount: number;
   hosts: HostItem[];
+}
+export interface AccountRegistry {
+  accountId: string;
+  email?: string;
+  version: number;
+  updatedAt: number;
+  folders: FolderItem[];
+  hosts: HostItem[];
+  tunnels: TunnelItem[];
+  keys: SshKeyItem[];
+  snippets: SnippetItem[];
+  settings: SettingsData;
 }

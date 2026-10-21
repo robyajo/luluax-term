@@ -306,6 +306,137 @@ function parseSshConfig(content) {
     return items;
 }
 // -------------------------------------------------------------
+// Per-Account Registry Manager (registry-<accountId>.json)
+// -------------------------------------------------------------
+function getRegistryFilePath(accountId) {
+    const safeId = accountId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return path_1.default.join(DATA_DIR, `registry-${safeId}.json`);
+}
+function loadAccountRegistry(accountId) {
+    const regPath = getRegistryFilePath(accountId);
+    if (fs_1.default.existsSync(regPath)) {
+        try {
+            return JSON.parse(fs_1.default.readFileSync(regPath, 'utf-8'));
+        }
+        catch { }
+    }
+    return {
+        accountId,
+        version: 1,
+        updatedAt: Date.now(),
+        folders: readData('folders.json', []),
+        hosts: readData('hosts.json', []),
+        tunnels: readData('tunnels.json', []),
+        keys: readData('keys.json', []),
+        snippets: readData('snippets.json', []),
+        settings: readData('settings.json', {})
+    };
+}
+function saveAccountRegistry(registry) {
+    const regPath = getRegistryFilePath(registry.accountId);
+    try {
+        fs_1.default.writeFileSync(regPath, JSON.stringify(registry, null, 2), 'utf-8');
+    }
+    catch (err) {
+        console.error('Error saving account registry:', err);
+    }
+}
+function syncActiveRegistry(accountId = 'default-user') {
+    const registry = {
+        accountId,
+        version: 1,
+        updatedAt: Date.now(),
+        folders: readData('folders.json', []),
+        hosts: readData('hosts.json', []),
+        tunnels: readData('tunnels.json', []),
+        keys: readData('keys.json', []),
+        snippets: readData('snippets.json', []),
+        settings: readData('settings.json', {})
+    };
+    saveAccountRegistry(registry);
+}
+// -------------------------------------------------------------
+// Folders API (Group & Organize Hosts)
+// -------------------------------------------------------------
+app.get('/api/folders', (_req, res) => {
+    const folders = readData('folders.json', []);
+    res.json({ success: true, folders });
+});
+app.post('/api/folders', (req, res) => {
+    const folders = readData('folders.json', []);
+    const body = req.body;
+    const newFolder = {
+        id: body.id || `folder_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        name: body.name || 'New Folder',
+        color: body.color || '#7b61ff',
+        icon: body.icon || '📁',
+        parentId: body.parentId || null,
+        orderIndex: typeof body.orderIndex === 'number' ? body.orderIndex : folders.length,
+        collapsed: Boolean(body.collapsed),
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+    };
+    folders.push(newFolder);
+    writeData('folders.json', folders);
+    syncActiveRegistry();
+    res.json({ success: true, folder: newFolder });
+});
+app.put('/api/folders/:id', (req, res) => {
+    const folderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const folders = readData('folders.json', []);
+    const index = folders.findIndex(f => f.id === folderId);
+    if (index === -1)
+        return res.status(404).json({ success: false, error: 'Folder not found' });
+    folders[index] = { ...folders[index], ...req.body, id: folders[index].id, updatedAt: Date.now() };
+    writeData('folders.json', folders);
+    syncActiveRegistry();
+    res.json({ success: true, folder: folders[index] });
+});
+app.delete('/api/folders/:id', (req, res) => {
+    const folderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    let folders = readData('folders.json', []);
+    folders = folders.filter(f => f.id !== folderId);
+    writeData('folders.json', folders);
+    // Unlink hosts in this folder
+    const hosts = readData('hosts.json', []);
+    let hostsModified = false;
+    for (const h of hosts) {
+        if (h.folderId === folderId) {
+            h.folderId = null;
+            hostsModified = true;
+        }
+    }
+    if (hostsModified)
+        writeData('hosts.json', hosts);
+    syncActiveRegistry();
+    res.json({ success: true });
+});
+app.get('/api/registry', (req, res) => {
+    const accountId = typeof req.query.accountId === 'string' ? req.query.accountId : 'default-user';
+    const registry = loadAccountRegistry(accountId);
+    res.json({ success: true, registry });
+});
+app.post('/api/registry/activate', (req, res) => {
+    const reqBody = req.body;
+    const accountId = (reqBody && typeof reqBody === 'object' && 'accountId' in reqBody && typeof reqBody.accountId === 'string')
+        ? reqBody.accountId
+        : 'default-user';
+    const registry = loadAccountRegistry(accountId);
+    if (Array.isArray(registry.folders))
+        writeData('folders.json', registry.folders);
+    if (Array.isArray(registry.hosts))
+        writeData('hosts.json', registry.hosts);
+    if (Array.isArray(registry.tunnels))
+        writeData('tunnels.json', registry.tunnels);
+    if (Array.isArray(registry.keys))
+        writeData('keys.json', registry.keys);
+    if (Array.isArray(registry.snippets))
+        writeData('snippets.json', registry.snippets);
+    if (registry.settings && typeof registry.settings === 'object')
+        writeData('settings.json', registry.settings);
+    res.json({ success: true, message: `Active workspace switched to account ${accountId}`, registry });
+});
+// -------------------------------------------------------------
 // Hosts API
 // -------------------------------------------------------------
 app.get('/api/hosts', (_req, res) => {
@@ -327,6 +458,8 @@ app.post('/api/hosts', (req, res) => {
         privateKey: body.privateKey || '',
         passphrase: body.passphrase || '',
         keyId: body.keyId || '',
+        folderId: body.folderId !== undefined ? body.folderId : null,
+        orderIndex: typeof body.orderIndex === 'number' ? body.orderIndex : hosts.length,
         group: body.group || 'Default',
         color: body.color || '#7b61ff',
         shellType: body.shellType || (os_1.default.platform() === 'darwin' ? 'zsh' : 'powershell'),
@@ -337,22 +470,40 @@ app.post('/api/hosts', (req, res) => {
     };
     hosts.push(newHost);
     writeData('hosts.json', hosts);
+    syncActiveRegistry();
     res.json({ success: true, host: newHost });
 });
 app.put('/api/hosts/:id', (req, res) => {
+    const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const hosts = readData('hosts.json', []);
-    const index = hosts.findIndex(h => h.id === req.params.id);
+    const index = hosts.findIndex(h => h.id === hostId);
     if (index === -1) {
         return res.status(404).json({ success: false, error: 'Host not found' });
     }
     hosts[index] = { ...hosts[index], ...req.body, id: hosts[index].id };
     writeData('hosts.json', hosts);
+    syncActiveRegistry();
     res.json({ success: true, host: hosts[index] });
 });
-app.delete('/api/hosts/:id', (req, res) => {
-    let hosts = readData('hosts.json', []);
-    hosts = hosts.filter(h => h.id !== req.params.id);
+app.post('/api/hosts/:id/move', (req, res) => {
+    const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const reqBody = req.body;
+    const folderId = (reqBody && typeof reqBody === 'object' && 'folderId' in reqBody) ? reqBody.folderId : null;
+    const hosts = readData('hosts.json', []);
+    const host = hosts.find(h => h.id === hostId);
+    if (!host)
+        return res.status(404).json({ success: false, error: 'Host not found' });
+    host.folderId = folderId;
     writeData('hosts.json', hosts);
+    syncActiveRegistry();
+    res.json({ success: true, host });
+});
+app.delete('/api/hosts/:id', (req, res) => {
+    const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    let hosts = readData('hosts.json', []);
+    hosts = hosts.filter(h => h.id !== hostId);
+    writeData('hosts.json', hosts);
+    syncActiveRegistry();
     res.json({ success: true });
 });
 // Import ~/.ssh/config (Termius Parity)
@@ -575,14 +726,17 @@ app.post('/api/cloud/push', async (req, res) => {
     if (!cloudApiUrl || !syncKey) {
         return res.status(400).json({ success: false, error: 'Cloud API URL and Sync Key are required' });
     }
+    const folders = readData('folders.json', []);
     const hosts = readData('hosts.json', []);
+    const tunnels = readData('tunnels.json', []);
+    const keys = readData('keys.json', []);
     const snippets = readData('snippets.json', []);
     const settings = readData('settings.json', {});
     const payload = {
         syncKey,
         device: `${os_1.default.hostname()} (${os_1.default.platform()} ${os_1.default.arch()})`,
         timestamp: Date.now(),
-        data: { hosts, snippets, settings }
+        data: { folders, hosts, tunnels, keys, snippets, settings }
     };
     try {
         const targetUrl = cloudApiUrl.replace(/\/+$/, '') + '/api/sync/push';
@@ -629,8 +783,14 @@ app.post('/api/cloud/pull', async (req, res) => {
             return res.status(response.status).json({ success: false, error: data.error || 'Cloud pull failed' });
         }
         if (data.data) {
+            if (Array.isArray(data.data.folders))
+                writeData('folders.json', data.data.folders);
             if (Array.isArray(data.data.hosts))
                 writeData('hosts.json', data.data.hosts);
+            if (Array.isArray(data.data.tunnels))
+                writeData('tunnels.json', data.data.tunnels);
+            if (Array.isArray(data.data.keys))
+                writeData('keys.json', data.data.keys);
             if (Array.isArray(data.data.snippets))
                 writeData('snippets.json', data.data.snippets);
             if (data.data.settings && typeof data.data.settings === 'object') {
@@ -638,6 +798,7 @@ app.post('/api/cloud/pull', async (req, res) => {
                 const mergedSettings = { ...localSettings, ...data.data.settings, lastCloudSync: Date.now() };
                 writeData('settings.json', mergedSettings);
             }
+            syncActiveRegistry(syncKey);
         }
         res.json({ success: true, message: 'Data pulled from cloud and updated locally!', timestamp: Date.now() });
     }

@@ -25,3 +25,5 @@ pnpm-debug.log*
 # OS metadata
 .DS_Store
 Thumbs.db
+# Account Registries
+data/registry-*.json

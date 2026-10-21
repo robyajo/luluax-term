@@ -172,6 +172,14 @@
               </svg>
               <span>Import SSH Config</span>
             </button>
+            <button class="btn btn-secondary" id="btn-add-folder" onclick="app.openFolderModal()" style="margin-right: 8px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                <line x1="12" y1="11" x2="12" y2="17"></line>
+                <line x1="9" y1="14" x2="15" y2="14"></line>
+              </svg>
+              <span>+ Folder</span>
+            </button>
             <button class="btn btn-primary" id="btn-add-host">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -184,6 +192,15 @@
 
         <div class="group-filter-bar" id="host-group-filters">
           <!-- Dynamic filter chips -->
+        </div>
+        <!-- Folders Shelf & Drag-Drop Zones (Termius Parity) -->
+        <div class="folders-shelf" id="folders-shelf">
+          <!-- Dynamic Folders with Drag & Drop -->
+        </div>
+
+        <!-- Root Unassigned Drop Zone -->
+        <div class="root-drop-zone" id="root-drop-zone" style="display:none">
+          <span>📥 Drag host ke sini untuk mengeluarkan dari folder (Unassigned)</span>
         </div>
 
         <div class="hosts-grid" id="hosts-grid">
@@ -623,16 +640,22 @@
         </div>
 
         <div class="form-row">
-          <div class="form-group col-7">
-            <label>Group / Category</label>
-            <input type="text" id="host-group" class="form-input" placeholder="e.g. Cloud, HomeLab, Work" value="Default">
+          <div class="form-group col-6">
+            <label>Folder (Kelompokkan)</label>
+            <select id="host-folder-id" class="form-select">
+              <option value="">-- Tanpa Folder (Root) --</option>
+            </select>
           </div>
-          <div class="form-group col-5">
-            <label>Badge Color</label>
-            <div class="color-picker-row">
-              <input type="color" id="host-color" class="form-color" value="#7b61ff">
-              <span class="color-label" id="color-hex-label">#7b61ff</span>
-            </div>
+          <div class="form-group col-6">
+            <label>Group / Category</label>
+            <input type="text" id="host-group" class="form-input" placeholder="e.g. Cloud, HomeLab" value="Default">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Badge Color</label>
+          <div class="color-picker-row">
+            <input type="color" id="host-color" class="form-color" value="#7b61ff">
+            <span class="color-label" id="color-hex-label">#7b61ff</span>
           </div>
         </div>
 
@@ -976,6 +999,48 @@
         <button type="button" class="btn btn-text" onclick="app.closeModal('modal-snippet-variables')">Batal</button>
         <button type="button" class="btn btn-primary" id="btn-run-snippet-variables" onclick="app.executeSnippetWithVariables()">Jalankan Perintah</button>
       </div>
+    </div>
+  </div>
+  <!-- MODAL: ADD / EDIT FOLDER (TERMIUS STYLE) -->
+  <div class="modal-backdrop" id="modal-folder">
+    <div class="modal-dialog" style="max-width: 440px">
+      <div class="modal-header">
+        <h3 id="modal-folder-title">Buat Folder Baru</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-folder')">&times;</button>
+      </div>
+      <form id="form-folder" onsubmit="event.preventDefault(); app.saveFolder();">
+        <input type="hidden" id="folder-id">
+        <div class="form-group">
+          <label>Nama Folder *</label>
+          <input type="text" id="folder-name" class="form-input" placeholder="e.g. Production Cluster, Database Servers" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group col-6">
+            <label>Ikon Folder</label>
+            <select id="folder-icon" class="form-select">
+              <option value="📁">📁 Folder Umum</option>
+              <option value="🚀">🚀 Production</option>
+              <option value="🧪">🧪 Staging</option>
+              <option value="💾">💾 Database</option>
+              <option value="☁️">☁️ Cloud</option>
+              <option value="🔒">🔒 Security / Bastion</option>
+              <option value="🏢">🏢 Office / Work</option>
+              <option value="🏠">🏠 HomeLab</option>
+            </select>
+          </div>
+          <div class="form-group col-6">
+            <label>Warna Folder</label>
+            <div class="color-picker-row">
+              <input type="color" id="folder-color" class="form-color" value="#7b61ff">
+              <span class="color-label" id="folder-color-label">#7b61ff</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-text" onclick="app.closeModal('modal-folder')">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan Folder</button>
+        </div>
+      </form>
     </div>
   </div>
 
