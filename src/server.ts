@@ -117,7 +117,7 @@ app.get('/api/system', (_req: Request, res: Response) => {
     platformLabel = `Linux (${arch})`;
   }
 
-  let appVersion = '1.0.3';
+  let appVersion = '1.0.4';
   try {
     const pkgPath = path.join(PROJECT_ROOT, 'package.json');
     if (fs.existsSync(pkgPath)) {
@@ -474,6 +474,9 @@ app.post('/api/hosts', (req: Request, res: Response) => {
     shellType: body.shellType || (os.platform() === 'darwin' ? 'zsh' : 'powershell'),
     proxyJumpHostId: body.proxyJumpHostId || '',
     startupScript: body.startupScript || '',
+    osType: body.osType || 'ubuntu',
+    tags: Array.isArray(body.tags) ? body.tags : [],
+    backspace: body.backspace || 'default',
     createdAt: Date.now(),
     lastConnected: null
   };

@@ -4,6 +4,19 @@ Semua perubahan penting pada proyek **LuluaX-Term** didokumentasikan di berkas i
 Format ini berbasis pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/),
 dan proyek ini mematuhi [Semantic Versioning](https://semver.org/lang/id/).
 
+## [1.0.4] - 2026-10-22
+
+### Added
+- **Termius Desktop UI & Layout Redesign**: Perombakan total antarmuka menyerupai Termius Desktop SSH client dengan tema midnight dark navy (`#0a0d18`, `#0e1220`, `#161c30`).
+- **Top Header Bar**: Menu hamburger `≡` untuk toggle sidebar, profil cloud Vaults, tab bar dinamis sesi terminal aktif & shortcut SFTP, dan Omni-Search bar dengan tombol aksi *Connect* instan.
+- **Left Navigation Sidebar**: Ikon navigasi presisi (server ganda bertingkat untuk Hosts, kunci diagonal untuk Keychain, rute panah untuk Port Forwarding, kurung kurawal `{ }` untuk Snippets, target fingerprint untuk Known Hosts, jam audit untuk Logs, dan Settings di bagian bawah).
+- **Distro OS Vector Badges**: Penampil badge logo distro OS vektor (Ubuntu, Debian, Windows, Linux) pada setiap kartu host di grid.
+- **Right Inspector Panel (Host Details)**: Panel inspeksi detail host di sisi kanan dengan *two-way binding* dan *debounced auto-save* (400ms) ke backend tanpa perlu tombol simpan manual.
+- **Active Glowing Selection Outline**: Kartu host yang dipilih memiliki highlight border biru bersinar (*glowing blue outline*).
+
+### Security
+- **Data Sanitization**: Membersihkan seluruh data host, hostname, dan kredensial privat/rahasia dari template seed bawaan (`data/hosts.json` dan `data/folders.json`) sebelum dipublikasikan, hanya menyisakan cangkang terminal lokal aman (PowerShell, Command Prompt, Git Bash, WSL).
+
 ## [1.0.3] - 2026-10-22
 
 ### Added

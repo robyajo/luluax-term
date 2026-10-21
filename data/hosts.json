@@ -1,16 +1,5 @@
 [
   {
-    "id": "local-zsh",
-    "label": "Local zsh (macOS)",
-    "type": "local",
-    "shellType": "zsh",
-    "group": "Local System",
-    "color": "#7b61ff",
-    "createdAt": 1729440000000,
-    "lastConnected": null,
-    "folderId": null
-  },
-  {
     "id": "local-powershell",
     "label": "Local PowerShell (Windows)",
     "type": "local",

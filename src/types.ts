@@ -17,6 +17,9 @@ export interface HostItem {
   shellType?: string;
   proxyJumpHostId?: string;
   startupScript?: string;
+  osType?: string;
+  tags?: string[];
+  backspace?: string;
   createdAt?: number;
   lastConnected?: number | null;
 }

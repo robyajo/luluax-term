@@ -14,8 +14,8 @@ Skill ini memuat seluruh panduan arsitektur, struktur kode, alur kerja, konvensi
 - **Jenis Aplikasi**: Desktop Client (berjalan sebagai Electron app mandiri atau Web-App via Express).
 - **Frontend**:
   - Mesin Terminal: `@xterm/xterm` (v6.0) dengan addons `@xterm/addon-fit` dan `@xterm/addon-web-links`.
-  - UI Engine: Vanilla JavaScript SPA tanpa dependensi framework berat, tema gelap terinspirasi Termius (`termius-dark`, `dracula`, `cyberpunk`, dll.).
-  - File UI: `public/index.html`, `public/style.css`, `public/app.js`.
+  - UI Engine: Vanilla JavaScript SPA dengan tema Termius Desktop Dark (`public/index.html`, `public/style.css`, `public/app.js`).
+  - **Skill Khusus Desain UI**: Lihat [luluax-termius-ui](../luluax-termius-ui/SKILL.md) untuk panduan lengkap desain sistem Termius, hierarki DOM, token warna, distro SVG badges, dan panel inspector dengan debounced auto-save.
 - **Backend Lokal (`server.js`)**:
   - Server: Express + WebSocket Server (`ws`) pada port bawaan **3980** (dapat diubah via `PORT` di `.env`).
   - SSH Client: Pure JavaScript `ssh2` Client (mendukung enkripsi modern, private key PEM/OpenSSH, passphrase, keepalive).

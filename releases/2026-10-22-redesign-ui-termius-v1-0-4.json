@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-22",
+  "type": "feature",
+  "project": {
+    "name": "LuluaX-Term"
+  },
+  "title": {
+    "id": "Rilis v1.0.4 — Redesain Total UI Khas Termius Desktop & Sanitasi Keamanan Data",
+    "en": "Release v1.0.4 — Complete Termius Desktop UI Redesign & Data Security Sanitization"
+  },
+  "body": {
+    "id": "Pembaruan v1.0.4 menghadirkan perombakan antarmuka visual secara menyeluruh terinspirasi dari Termius Desktop SSH client. Dilengkapi tema midnight dark navy premium, bilah header dengan omni-search bar dan dynamic terminal tabs, sidebar navigasi dengan ikon presisi, serta panel inspector detail host dengan auto-save debounced otomatis.",
+    "en": "Update v1.0.4 introduces a complete visual UI overhaul inspired by Termius Desktop SSH client. Features include a premium midnight dark navy theme, top header with omni-search and dynamic terminal tabs, precise left navigation sidebar icons, and a real-time host details inspector with debounced auto-save."
+  },
+  "items": [
+    {
+      "type": "feature",
+      "id": "Desain Antarmuka Termius Desktop: Tata letak baru bergaya Termius dengan palet midnight dark navy (#0a0d18, #0e1220, #161c30) dan aksen glowing outline.",
+      "en": "Termius Desktop UI Design: New Termius-styled layout with midnight dark navy palette (#0a0d18, #0e1220, #161c30) and glowing outline accents."
+    },
+    {
+      "type": "feature",
+      "id": "Bilah Header Terintegrasi: Dilengkapi menu toggle sidebar (≡), pemilih Vaults cloud, tab dinamis sesi terminal aktif & SFTP, serta Omni-Search bar dengan tombol Connect instan.",
+      "en": "Integrated Top Header: Equipped with sidebar menu toggle (≡), Vaults cloud profile switcher, dynamic active terminal & SFTP tabs, and Omni-Search bar with instant Connect button."
+    },
+    {
+      "type": "feature",
+      "id": "Sidebar Navigasi Presisi: Ikon vektor baru untuk Hosts, Keychain, Port Forwarding, Snippets { }, Known Hosts, Logs, dan Settings.",
+      "en": "Precise Navigation Sidebar: New vector icons for Hosts, Keychain, Port Forwarding, Snippets { }, Known Hosts, Logs, and Settings."
+    },
+    {
+      "type": "feature",
+      "id": "Panel Inspektur Host Details: Pengeditan live langsung di sisi kanan dengan auto-save debounced 400ms ke backend tanpa tombol simpan manual.",
+      "en": "Host Details Inspector Panel: Live side editing with 400ms debounced auto-save to backend without manual save buttons."
+    },
+    {
+      "type": "feature",
+      "id": "Distro OS Vector Badges: Tampilan logo OS asli (Ubuntu, Debian, Windows, Linux) pada setiap kartu host di grid.",
+      "en": "Distro OS Vector Badges: Authentic vector OS badges (Ubuntu, Debian, Windows, Linux) on every host card in the grid."
+    },
+    {
+      "type": "security",
+      "id": "Sanitasi Data Rahasia: Menghapus seluruh host, domain, dan kredensial privat dari berkas seed data bawaan sebelum rilis publik.",
+      "en": "Secret Data Sanitization: Purged all private hosts, domains, and credentials from default seed data files prior to public release."
+    }
+  ]
+}

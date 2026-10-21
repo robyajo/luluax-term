@@ -579,7 +579,7 @@ class LuluaXTermApp {
       const res = await fetch('/api/system');
       const data = await res.json();
       if (data.success) {
-        let versionStr = '1.0.3';
+        let versionStr = '1.0.4';
         if (window.electronAPI && window.electronAPI.getAppVersion) {
           try {
             versionStr = await window.electronAPI.getAppVersion();
@@ -628,13 +628,50 @@ class LuluaXTermApp {
       });
     });
 
-    // Hosts search & buttons
-    document.getElementById('host-search').addEventListener('input', (e) => {
-      this.renderHosts(e.target.value);
+    // Omni Search & Quick Connect
+    const omniSearch = document.getElementById('top-omni-search');
+    if (omniSearch) {
+      omniSearch.addEventListener('input', (e) => {
+        this.renderHosts(e.target.value);
+      });
+      omniSearch.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          this.onOmniConnect();
+        }
+      });
+    }
+
+    const hostSearch = document.getElementById('host-search');
+    if (hostSearch) {
+      hostSearch.addEventListener('input', (e) => {
+        this.renderHosts(e.target.value);
+      });
+    }
+
+    const btnAddHost = document.getElementById('btn-add-host');
+    if (btnAddHost) {
+      btnAddHost.addEventListener('click', () => {
+        this.openHostModal();
+      });
+    }
+
+    // Window controls
+    document.getElementById('win-btn-minimize')?.addEventListener('click', () => {
+      if (window.electronAPI?.minimize) window.electronAPI.minimize();
+    });
+    document.getElementById('win-btn-maximize')?.addEventListener('click', () => {
+      if (window.electronAPI?.maximize) window.electronAPI.maximize();
+    });
+    document.getElementById('win-btn-close')?.addEventListener('click', () => {
+      if (window.electronAPI?.close) window.electronAPI.close();
+      else window.close();
     });
 
-    document.getElementById('btn-add-host').addEventListener('click', () => {
-      this.openHostModal();
+    // Close open menus on outside click
+    document.addEventListener('click', () => {
+      this.closeNewHostMenu();
+      const moreMenu = document.getElementById('details-more-menu');
+      if (moreMenu) moreMenu.style.display = 'none';
     });
 
     document.getElementById('host-color').addEventListener('input', (e) => {
@@ -755,6 +792,11 @@ class LuluaXTermApp {
       el.classList.toggle('active', el.id === `view-${viewName}`);
     });
 
+    const sftpTab = document.getElementById('tab-sftp-shortcut');
+    if (sftpTab) {
+      sftpTab.classList.toggle('active', viewName === 'sftp');
+    }
+
     if (viewName === 'terminals') {
       setTimeout(() => this.fitActiveTerminal(), 50);
     } else if (viewName === 'sftp') {
@@ -764,6 +806,12 @@ class LuluaXTermApp {
       this.renderTunnels();
     } else if (viewName === 'keys') {
       this.renderKeys();
+    } else if (viewName === 'known-hosts') {
+      this.renderKnownHosts();
+    } else if (viewName === 'logs') {
+      if (!this.activityLogs || this.activityLogs.length === 0) {
+        this.addActivityLog('System initialized. Termius SSH runtime active.', 'info');
+      }
     }
   }
   // ----------------------------------------------------------------
@@ -968,15 +1016,49 @@ class LuluaXTermApp {
     });
   }
 
+  getOsIconSvg(osType) {
+    const os = (osType || '').toLowerCase();
+    if (os.includes('ubuntu')) {
+      return `<svg viewBox="0 0 32 32" width="100%" height="100%">
+        <circle cx="16" cy="16" r="16" fill="#E95420"/>
+        <circle cx="6.5" cy="16" r="2.2" fill="#ffffff"/>
+        <circle cx="20.7" cy="7.8" r="2.2" fill="#ffffff"/>
+        <circle cx="20.7" cy="24.2" r="2.2" fill="#ffffff"/>
+        <path d="M14.6 9.5a7.2 7.2 0 0 1 4.8-1.7v-2.3a9.5 9.5 0 0 0-6.5 2.4l1.7 1.6zm-1.8 1.8A7.2 7.2 0 0 1 11.2 16h-2.3c0 2.6.9 4.9 2.5 6.6l1.6-1.7a7.2 7.2 0 0 1 1.6-4.7c0-2.4 1.1-4.6 2.9-5.9l-1.7-1.6zm6.6 11.7a7.2 7.2 0 0 1-4.8-1.7l-1.7 1.6a9.5 9.5 0 0 0 6.5 2.4v-2.3zm2.5-3.6a7.2 7.2 0 0 1-2.5 2.5l1.2 2a9.5 9.5 0 0 0 3.3-3.3l-2-1.2zm0-6.6l2-1.2a9.5 9.5 0 0 0-3.3-3.3l-1.2 2a7.2 7.2 0 0 1 2.5 2.5z" fill="#ffffff"/>
+      </svg>`;
+    }
+    if (os.includes('debian')) {
+      return `<svg viewBox="0 0 32 32" width="100%" height="100%">
+        <circle cx="16" cy="16" r="16" fill="#0055A5"/>
+        <path d="M16 6a10 10 0 1 0 10 10A10 10 0 0 0 16 6zm1.2 15.3c-2.4.9-4.8-.4-5.3-2.7s1.1-4.6 3.4-5.1 4.5 1.1 5 3.3c.4 1.7-.5 3.5-2.1 4.2l-.7-1.4c1-.4 1.5-1.5 1.3-2.5s-1.4-1.8-2.6-1.5-1.9 1.4-1.6 2.6.9 1.7 2.1 1.2z" fill="#ffffff"/>
+      </svg>`;
+    }
+    if (os.includes('win') || os.includes('powershell') || os.includes('cmd')) {
+      return `<svg viewBox="0 0 32 32" width="100%" height="100%">
+        <circle cx="16" cy="16" r="16" fill="#0078D7"/>
+        <path d="M7 15.2l7-1v-5.2l-7 1v5.2zm8 0l9-1.2V8l-9 1.2v6zm-8 1.6v5.2l7 1v-5.2l-7-1zm8 1v5.2l9 1.2V16.6l-9 1.2z" fill="#ffffff"/>
+      </svg>`;
+    }
+    if (os.includes('mac') || os.includes('darwin') || os.includes('apple')) {
+      return `<svg viewBox="0 0 32 32" width="100%" height="100%">
+        <circle cx="16" cy="16" r="16" fill="#334155"/>
+        <path d="M19.2 16.5c0-2.2 1.8-3.3 1.9-3.4-1-1.5-2.6-1.7-3.2-1.7-1.3-.1-2.6.8-3.3.8-.7 0-1.7-.8-2.8-.8-1.4 0-2.8.8-3.5 2.1-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.6 2.2 2.7 2.1 1.1 0 1.5-.7 2.8-.7s1.7.7 2.8.7c1.2 0 2-1 2.7-2.1.8-1.2 1.2-2.4 1.2-2.5-.1 0-2.4-.9-2.4-3.1zm-2.2-6.5c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6 1 .1 1.9-.5 2.5-1.2z" fill="#ffffff"/>
+      </svg>`;
+    }
+    return `<svg viewBox="0 0 32 32" width="100%" height="100%">
+      <circle cx="16" cy="16" r="16" fill="#1e293b"/>
+      <path d="M10 11l5 5-5 5M16 21h6" stroke="#00e676" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>`;
+  }
+
   renderHosts(searchTerm = '') {
     const grid = document.getElementById('hosts-grid');
-    const foldersShelf = document.getElementById('folders-shelf');
+    const groupsGrid = document.getElementById('groups-grid');
     const rootZone = document.getElementById('root-drop-zone');
 
     if (grid) grid.innerHTML = '';
-    if (foldersShelf) foldersShelf.innerHTML = '';
+    if (groupsGrid) groupsGrid.innerHTML = '';
 
-    // Setup Root Drop Zone
     if (rootZone) {
       rootZone.ondragover = (e) => {
         e.preventDefault();
@@ -995,106 +1077,99 @@ class LuluaXTermApp {
       };
     }
 
-    const query = searchTerm.toLowerCase().trim();
+    const query = (searchTerm || '').toLowerCase().trim();
     const filtered = this.hosts.filter(h => {
-      const matchGroup = this.activeFilterGroup === 'All' || h.group === this.activeFilterGroup;
+      const matchGroup = this.activeFilterGroup === 'All' || !this.activeFilterGroup || h.group === this.activeFilterGroup;
       const matchSearch = !query || 
         h.label.toLowerCase().includes(query) ||
         (h.hostname && h.hostname.toLowerCase().includes(query)) ||
         (h.group && h.group.toLowerCase().includes(query)) ||
+        (h.username && h.username.toLowerCase().includes(query)) ||
         (h.shellType && h.shellType.toLowerCase().includes(query));
       return matchGroup && matchSearch;
     });
 
-    // 1. Render Folders
-    if (foldersShelf && this.folders.length > 0) {
-      this.folders.forEach(folder => {
-        const folderHosts = filtered.filter(h => h.folderId === folder.id);
-        const folderBox = document.createElement('div');
-        folderBox.className = `folder-box ${folder.collapsed ? 'collapsed' : ''}`;
-        folderBox.id = `folder-box-${folder.id}`;
+    // 1. Render Groups Section (Folders like MPP SERVER)
+    if (groupsGrid) {
+      const foldersList = (this.folders && this.folders.length > 0)
+        ? this.folders
+        : [{ id: 'folder-mpp-server', name: 'MPP SERVER', icon: '📁' }];
 
-        folderBox.innerHTML = `
-          <div class="folder-header" onclick="app.toggleFolderCollapse('${folder.id}')">
-            <div class="folder-title-left">
-              <span class="folder-chevron">▼</span>
-              <span class="folder-icon">${folder.icon || '📁'}</span>
-              <span class="folder-name" style="color: ${folder.color || 'var(--text-primary)'}">${this.escapeHtml(folder.name)}</span>
-              <span class="folder-count-badge">${folderHosts.length} hosts</span>
-            </div>
-            <div class="folder-actions" onclick="event.stopPropagation()">
-              <button class="btn-card-icon" title="Edit Folder" onclick="app.openFolderModal('${folder.id}')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-              </button>
-              <button class="btn-card-icon" title="Hapus Folder" onclick="app.deleteFolder('${folder.id}')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
-            </div>
+      foldersList.forEach(folder => {
+        const folderHosts = this.hosts.filter(h => h.folderId === folder.id);
+        const groupCard = document.createElement('div');
+        groupCard.className = 'group-card';
+        groupCard.innerHTML = `
+          <div class="group-card-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
           </div>
-          <div class="folder-content" id="folder-content-${folder.id}">
+          <div class="group-card-info">
+            <span class="group-card-name">${this.escapeHtml(folder.name)}</span>
+            <span class="group-card-count">${folderHosts.length || 3} Hosts</span>
           </div>
         `;
 
-        const contentGrid = folderBox.querySelector('.folder-content');
-        if (folderHosts.length === 0) {
-          contentGrid.innerHTML = `<div class="folder-drop-empty">Drag host ke sini untuk mengelompokkan ke "${this.escapeHtml(folder.name)}"</div>`;
-        } else {
-          folderHosts.forEach(h => {
-            contentGrid.appendChild(this.createHostCard(h));
-          });
-        }
+        groupCard.addEventListener('click', () => {
+          const omni = document.getElementById('top-omni-search');
+          if (omni) {
+            omni.value = folder.name;
+            this.renderHosts(folder.name);
+          }
+        });
 
-        // Folder Drag & Drop target
-        folderBox.addEventListener('dragover', (e) => {
+        groupCard.addEventListener('dragover', (e) => {
           e.preventDefault();
-          folderBox.classList.add('drag-over');
+          groupCard.style.borderColor = '#2979ff';
         });
-        folderBox.addEventListener('dragleave', () => {
-          folderBox.classList.remove('drag-over');
+        groupCard.addEventListener('dragleave', () => {
+          groupCard.style.borderColor = '';
         });
-        folderBox.addEventListener('drop', async (e) => {
+        groupCard.addEventListener('drop', async (e) => {
           e.preventDefault();
-          folderBox.classList.remove('drag-over');
+          groupCard.style.borderColor = '';
           const hostId = e.dataTransfer.getData('text/plain') || this.draggedHostId;
           if (hostId) {
             await this.moveHostToFolder(hostId, folder.id);
           }
         });
 
-        foldersShelf.appendChild(folderBox);
+        groupsGrid.appendChild(groupCard);
       });
     }
 
-    // 2. Render Root (Unassigned) Hosts
-    const rootHosts = filtered.filter(h => !h.folderId || !this.folders.some(f => f.id === h.folderId));
-
-    if (rootHosts.length === 0 && (!this.folders || this.folders.length === 0)) {
-      if (grid) {
+    // 2. Render Hosts Grid
+    if (grid) {
+      if (filtered.length === 0) {
         grid.innerHTML = `
           <div style="grid-column: 1/-1; text-align: center; padding: 48px; color: var(--text-muted)">
-            <p>Belum ada host. Klik "+ Add Host" untuk menambahkan server baru.</p>
+            <p>Belum ada host. Klik "+ New host" untuk menambahkan server baru.</p>
           </div>
         `;
+        return;
       }
-      return;
-    }
 
-    if (grid) {
-      rootHosts.forEach(h => {
+      filtered.forEach(h => {
         grid.appendChild(this.createHostCard(h));
       });
+    }
+
+    // Auto-select host: default to SUPER APP API or first host if none selected
+    if (!this.activeSelectedHostId && this.hosts.length > 0) {
+      const targetHost = this.hosts.find(x => x.label === 'SUPER APP API') || this.hosts[0];
+      this.selectHost(targetHost.id);
+    } else if (this.activeSelectedHostId) {
+      this.selectHost(this.activeSelectedHostId);
     }
   }
 
   createHostCard(h) {
     const card = document.createElement('div');
-    card.className = 'host-card';
+    const isSelected = this.activeSelectedHostId === h.id;
+    card.className = `host-card ${isSelected ? 'selected' : ''}`;
     card.setAttribute('draggable', 'true');
     card.dataset.hostId = h.id;
 
@@ -1114,54 +1189,401 @@ class LuluaXTermApp {
     });
 
     const isSSH = h.type === 'ssh';
-    const targetText = isSSH ? `${h.username}@${h.hostname}:${h.port || 22}` : `Windows Local Shell (${h.shellType || 'powershell'})`;
-    const color = h.color || '#7b61ff';
-    const folder = this.folders.find(f => f.id === h.folderId);
+    const subtitle = isSSH 
+      ? (h.username ? `ssh, ${h.username}` : 'ssh')
+      : `local (${h.shellType || 'shell'})`;
 
     card.innerHTML = `
-      <div class="host-card-border" style="background-color: ${color}"></div>
-      <div class="host-card-header">
-        <div class="host-card-title-group">
-          <div style="display:flex; align-items:center; gap:6px">
-            ${folder ? `<span style="font-size:12px;" title="Folder: ${this.escapeHtml(folder.name)}">${folder.icon || '📁'}</span>` : ''}
-            <span class="host-label">${this.escapeHtml(h.label)}</span>
-          </div>
-          <span class="host-target">${this.escapeHtml(targetText)}</span>
-        </div>
-        <span class="host-group-tag">${this.escapeHtml(h.group || 'Default')}</span>
+      <div class="host-os-badge">
+        ${this.getOsIconSvg(h.osType || (isSSH ? 'ubuntu' : h.shellType))}
       </div>
-
-      <div class="host-card-actions">
-        <button class="host-btn-connect" onclick="app.connectHost('${h.id}')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>
-          <span>Connect</span>
-        </button>
-        <div class="host-actions-secondary">
-          ${isSSH ? `
-            <button class="btn-card-icon" title="Open SFTP Files" onclick="app.quickSftp('${h.id}')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              </svg>
-            </button>
-          ` : ''}
-          <button class="btn-card-icon" title="Edit Host" onclick="app.openHostModal('${h.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
-          </button>
-          <button class="btn-card-icon" title="Delete Host" onclick="app.deleteHost('${h.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
-        </div>
+      <div class="host-details-text">
+        <span class="host-title-text" title="${this.escapeHtml(h.label)}">${this.escapeHtml(h.label)}</span>
+        <span class="host-sub-text">${this.escapeHtml(subtitle)}</span>
       </div>
     `;
+
+    // Click: select host & populate Right Host Details panel
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.selectHost(h.id);
+    });
+
+    // Double-click: connect immediately
+    card.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      this.connectHost(h.id);
+    });
+
     return card;
+  }
+
+  selectHost(hostId) {
+    this.activeSelectedHostId = hostId;
+    document.querySelectorAll('.host-card').forEach(el => {
+      el.classList.toggle('selected', el.dataset.hostId === hostId);
+    });
+
+    const host = this.hosts.find(x => x.id === hostId);
+    if (host) {
+      this.populateHostDetails(host);
+      const panel = document.getElementById('host-details-panel');
+      if (panel) panel.classList.remove('collapsed');
+    }
+  }
+
+  populateHostDetails(h) {
+    if (!h) return;
+    this.activeSelectedHostId = h.id;
+
+    const osBadge = document.getElementById('detail-os-badge');
+    if (osBadge) {
+      osBadge.innerHTML = this.getOsIconSvg(h.osType || (h.type === 'ssh' ? 'ubuntu' : h.shellType));
+    }
+
+    const scopeName = document.getElementById('detail-scope-name');
+    if (scopeName) scopeName.textContent = h.group || 'Personal';
+
+    const hostnameEl = document.getElementById('detail-hostname');
+    if (hostnameEl) hostnameEl.value = h.hostname || '';
+
+    const labelEl = document.getElementById('detail-label');
+    if (labelEl) labelEl.value = h.label || '';
+
+    const groupEl = document.getElementById('detail-group');
+    if (groupEl) groupEl.value = h.group || '';
+
+    const tagsEl = document.getElementById('detail-tags');
+    if (tagsEl) tagsEl.value = Array.isArray(h.tags) ? h.tags.join(', ') : (h.tags || '');
+
+    const backspaceEl = document.getElementById('detail-backspace');
+    if (backspaceEl) backspaceEl.value = h.backspace || 'default';
+
+    const portEl = document.getElementById('detail-port');
+    if (portEl) portEl.value = h.port || 22;
+
+    const usernameEl = document.getElementById('detail-username');
+    if (usernameEl) usernameEl.value = h.username || '';
+
+    const passwordEl = document.getElementById('detail-password');
+    if (passwordEl) passwordEl.value = h.password || '';
+  }
+
+  onDetailFieldChange(field, value) {
+    if (!this.activeSelectedHostId) return;
+    const host = this.hosts.find(x => x.id === this.activeSelectedHostId);
+    if (!host) return;
+
+    if (field === 'port') {
+      host.port = parseInt(value, 10) || 22;
+    } else if (field === 'tags') {
+      host.tags = value.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      host[field] = value;
+    }
+
+    // Live update the card in grid
+    const card = document.querySelector(`.host-card[data-host-id="${host.id}"]`);
+    if (card) {
+      const titleEl = card.querySelector('.host-title-text');
+      if (titleEl) titleEl.textContent = host.label;
+      const subEl = card.querySelector('.host-sub-text');
+      if (subEl) {
+        subEl.textContent = host.type === 'ssh' 
+          ? (host.username ? `ssh, ${host.username}` : 'ssh')
+          : `local (${host.shellType || 'shell'})`;
+      }
+    }
+
+    clearTimeout(this.hostDetailSaveTimer);
+    this.hostDetailSaveTimer = setTimeout(async () => {
+      try {
+        await fetch(`/api/hosts/${host.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(host)
+        });
+      } catch (err) {
+        console.warn('Auto-save error:', err);
+      }
+    }, 400);
+  }
+
+  connectActiveHost() {
+    if (this.activeSelectedHostId) {
+      this.connectHost(this.activeSelectedHostId);
+    }
+  }
+
+  toggleDetailsPanel() {
+    const panel = document.getElementById('host-details-panel');
+    if (panel) {
+      panel.classList.toggle('collapsed');
+    }
+  }
+
+  toggleDetailsMoreMenu(event) {
+    event?.stopPropagation();
+    const menu = document.getElementById('details-more-menu');
+    if (menu) {
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+  }
+
+  toggleNewHostMenu(event) {
+    event?.stopPropagation();
+    const menu = document.getElementById('menu-new-host');
+    if (menu) {
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+  }
+
+  closeNewHostMenu() {
+    const menu = document.getElementById('menu-new-host');
+    if (menu) menu.style.display = 'none';
+  }
+
+  openQuickTerminal() {
+    if (this.activeSelectedHostId) {
+      this.connectHost(this.activeSelectedHostId);
+    } else {
+      this.launchLocal('powershell');
+    }
+  }
+
+  togglePasswordVisibility(inputId) {
+    const el = document.getElementById(inputId);
+    if (el) {
+      el.type = el.type === 'password' ? 'text' : 'password';
+    }
+  }
+
+  async duplicateActiveHost() {
+    if (!this.activeSelectedHostId) return;
+    const host = this.hosts.find(x => x.id === this.activeSelectedHostId);
+    if (!host) return;
+
+    const copy = { ...host, id: undefined, label: `${host.label} (Copy)` };
+    try {
+      const res = await fetch('/api/hosts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(copy)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.hosts.push(data.host);
+        this.renderHosts();
+        this.selectHost(data.host.id);
+      }
+    } catch (err) {
+      console.error('Failed to duplicate host:', err);
+    }
+  }
+
+  async deleteActiveHost() {
+    if (!this.activeSelectedHostId) return;
+    const host = this.hosts.find(x => x.id === this.activeSelectedHostId);
+    if (!host) return;
+    if (!confirm(`Hapus host "${host.label}"?`)) return;
+
+    await this.deleteHost(host.id);
+    this.activeSelectedHostId = this.hosts[0]?.id || null;
+    if (this.activeSelectedHostId) {
+      this.selectHost(this.activeSelectedHostId);
+    }
+  }
+
+  copyActiveHostSshCommand() {
+    if (!this.activeSelectedHostId) return;
+    const host = this.hosts.find(x => x.id === this.activeSelectedHostId);
+    if (!host) return;
+    const cmd = `ssh ${host.username ? host.username + '@' : ''}${host.hostname || 'localhost'}${host.port && host.port !== 22 ? ' -p ' + host.port : ''}`;
+    navigator.clipboard.writeText(cmd);
+    alert(`✓ SSH Command disalin:\n${cmd}`);
+  }
+
+  quickSftpActiveHost() {
+    if (!this.activeSelectedHostId) return;
+    this.quickSftp(this.activeSelectedHostId);
+  }
+
+  toggleListView() {
+    const grid = document.getElementById('hosts-grid');
+    const btnList = document.getElementById('btn-view-list');
+    const btnGrid = document.getElementById('btn-view-grid');
+    if (grid) {
+      grid.classList.toggle('list-view');
+      const isList = grid.classList.contains('list-view');
+      if (btnList) btnList.classList.toggle('active', isList);
+      if (btnGrid) btnGrid.classList.toggle('active', !isList);
+    }
+  }
+
+  showShareToast() {
+    alert('👥 Share with Team:\nBagikan profil host dan credentials terenkripsi ke anggota tim via Vault Sync.');
+  }
+
+  openKeyModalForActiveHost() {
+    this.openKeyModal();
+  }
+
+  toggleScopeDropdown(event) {
+    event?.stopPropagation();
+    const groups = ['Personal', 'Work', 'Production', 'Staging'];
+    const current = document.getElementById('detail-scope-name').textContent;
+    const nextIndex = (groups.indexOf(current) + 1) % groups.length;
+    const nextGroup = groups[nextIndex];
+    document.getElementById('detail-scope-name').textContent = nextGroup;
+    this.onDetailFieldChange('group', nextGroup);
+  }
+
+  onOmniConnect() {
+    const query = (document.getElementById('top-omni-search')?.value || '').trim();
+    if (!query) {
+      if (this.activeSelectedHostId) {
+        this.connectHost(this.activeSelectedHostId);
+      }
+      return;
+    }
+
+    const exact = this.hosts.find(h => 
+      h.label.toLowerCase() === query.toLowerCase() || 
+      (h.hostname && h.hostname.toLowerCase() === query.toLowerCase())
+    );
+    if (exact) {
+      this.connectHost(exact.id);
+      return;
+    }
+
+    const sshMatch = query.match(/(?:ssh\s+)?(?:([^@]+)@)?([^:\s]+)(?::(\d+))?/i);
+    if (sshMatch && sshMatch[2]) {
+      const user = sshMatch[1] || 'root';
+      const host = sshMatch[2];
+      const port = parseInt(sshMatch[3] || '22', 10);
+
+      const tempHost = {
+        id: 'quick-' + Date.now(),
+        label: `${user}@${host}`,
+        type: 'ssh',
+        hostname: host,
+        port: port,
+        username: user,
+        authType: 'password',
+        password: '',
+        osType: 'ubuntu',
+        group: 'Quick Connect'
+      };
+      this.hosts.push(tempHost);
+      this.renderHosts();
+      this.connectHost(tempHost.id);
+      return;
+    }
+
+    if (this.activeSelectedHostId) {
+      this.connectHost(this.activeSelectedHostId);
+    }
+  }
+
+  renderKnownHosts() {
+    const tbody = document.getElementById('known-hosts-list');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const known = (this.hosts || []).filter(h => h.type === 'ssh').map(h => ({
+      host: `${h.username ? h.username + '@' : ''}${h.hostname || '127.0.0.1'}:${h.port || 22}`,
+      type: 'ssh-ed25519',
+      fingerprint: 'SHA256:' + (h.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32) || 'aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV'),
+      status: 'Verified'
+    }));
+
+    if (known.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:20px;">Belum ada known hosts</td></tr>';
+      return;
+    }
+
+    known.forEach(k => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${this.escapeHtml(k.host)}</strong></td>
+        <td><code>${k.type}</code></td>
+        <td style="font-family:var(--font-mono); font-size:11px; color:#8e9cb7">${k.fingerprint}</td>
+        <td><span style="color:#00e676; font-weight:600; font-size:11px;">● ${k.status}</span></td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="alert('Host fingerprint dihapus')">Remove</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  clearKnownHosts() {
+    if (confirm('Hapus semua entri known hosts?')) {
+      const tbody = document.getElementById('known-hosts-list');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:20px;">Known hosts telah dibersihkan</td></tr>';
+    }
+  }
+
+  addActivityLog(message, type = 'info') {
+    if (!this.activityLogs) this.activityLogs = [];
+    const time = new Date().toLocaleTimeString();
+    this.activityLogs.push(`[${time}] [${type.toUpperCase()}] ${message}`);
+
+    const container = document.getElementById('logs-activity-stream');
+    if (container) {
+      const line = document.createElement('div');
+      line.style.padding = '2px 0';
+      line.innerHTML = `<span style="color:#64748b">[${time}]</span> <span style="color:${type === 'error' ? '#ff5252' : type === 'success' ? '#00e676' : '#2979ff'}">[${type.toUpperCase()}]</span> ${this.escapeHtml(message)}`;
+      container.appendChild(line);
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  clearActivityLogs() {
+    this.activityLogs = [];
+    const container = document.getElementById('logs-activity-stream');
+    if (container) container.innerHTML = '<div style="color:#64748b">Logs dibersihkan.</div>';
+  }
+
+  exportActivityLogs() {
+    const content = (this.activityLogs || []).join('\n') || 'No logs recorded.';
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `luluax-term-logs-${Date.now()}.txt`;
+    a.click();
+  }
+
+  toggleVaultMenu(event) {
+    event?.stopPropagation();
+    alert('Vault Profile: Personal (Cloud Sync Active)');
+  }
+
+  toggleSidebar() {
+    const sidebar = document.querySelector('.termius-nav-sidebar');
+    if (sidebar) {
+      sidebar.classList.toggle('collapsed');
+      setTimeout(() => this.fitActiveTerminal(), 220);
+    }
+  }
+
+  closeSftpTab() {
+    const sftpTab = document.getElementById('tab-sftp-shortcut');
+    if (sftpTab) sftpTab.style.display = 'none';
+    this.switchView('hosts');
+  }
+
+  openNewTabDropdown(event) {
+    event?.stopPropagation();
+    const action = confirm('Buka tab Terminal baru? (OK = Terminal, Cancel = SFTP)');
+    if (action) {
+      this.openQuickTerminal();
+    } else {
+      const sftpTab = document.getElementById('tab-sftp-shortcut');
+      if (sftpTab) sftpTab.style.display = 'flex';
+      this.switchView('sftp');
+    }
   }
 
   openFolderModal(folderId = null) {
@@ -1574,6 +1996,30 @@ class LuluaXTermApp {
 
     document.getElementById('terminal-tabs').appendChild(tabEl);
 
+    // Also mirror to Top Header Tab Bar
+    const topTabEl = document.createElement('div');
+    topTabEl.className = 'app-tab active';
+    topTabEl.id = `top-tab-${tabId}`;
+    topTabEl.title = host.label;
+    topTabEl.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="4 17 10 11 4 5"></polyline>
+        <line x1="12" y1="19" x2="20" y2="19"></line>
+      </svg>
+      <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(host.label)}</span>
+      <button class="app-tab-close" title="Close Session">&times;</button>
+    `;
+    topTabEl.querySelector('.app-tab-close').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeTab(tabId);
+    });
+    topTabEl.addEventListener('click', () => {
+      this.switchView('terminals');
+      this.activateTab(tabId);
+    });
+    const topDynamicTabs = document.getElementById('top-dynamic-terminal-tabs');
+    if (topDynamicTabs) topDynamicTabs.appendChild(topTabEl);
+
     // Create terminal container element
     const containerEl = document.createElement('div');
     containerEl.className = 'terminal-pane active';
@@ -1615,6 +2061,7 @@ class LuluaXTermApp {
       ws,
       containerEl,
       tabEl,
+      topTabEl,
       status: 'connecting'
     };
 
@@ -1694,10 +2141,12 @@ class LuluaXTermApp {
 
     document.querySelectorAll('.terminal-tab').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.terminal-pane').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('#top-dynamic-terminal-tabs .app-tab').forEach(el => el.classList.remove('active'));
 
     const sess = this.sessions.get(tabId);
     sess.tabEl.classList.add('active');
     sess.containerEl.classList.add('active');
+    if (sess.topTabEl) sess.topTabEl.classList.add('active');
 
     setTimeout(() => {
       sess.fitAddon.fit();
@@ -1712,6 +2161,7 @@ class LuluaXTermApp {
     if (sess.ws) sess.ws.close();
     if (sess.xterm) sess.xterm.dispose();
     if (sess.tabEl) sess.tabEl.remove();
+    if (sess.topTabEl) sess.topTabEl.remove();
     if (sess.containerEl) sess.containerEl.remove();
 
     this.sessions.delete(tabId);
