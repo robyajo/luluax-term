@@ -26,11 +26,17 @@ Termius terkenal dengan antarmuka transfer file 2 panel yang memisahkan komputer
 ### B. Endpoint API Terkait:
 - `GET /api/local/drives` — Deteksi daftar drive lokal komputer
 - `POST /api/local/list` — Eksplorasi isi direktori lokal
-- `POST /api/sftp/connect` — Inisialisasi handshake sesi SFTP ke host SSH
+- `POST /api/sftp/connect` — Inisialisasi handshake sesi SFTP ke host SSH (mendukung ProxyJump & Key Vault)
 - `POST /api/sftp/list` — Eksplorasi direktori remote server
+- `POST /api/sftp/read-file` — Membaca isi file remote untuk editor internal
+- `POST /api/sftp/write-file` — Menyimpan hasil edit kembali ke server remote
 - `POST /api/sftp/transfer-local-to-remote` — Transfer stream file lokal ke remote
 - `POST /api/sftp/transfer-remote-to-local` — Transfer stream file remote ke lokal
+- `POST /api/sftp/disconnect` — Menutup sesi SFTP dan membersihkan jump connection
 
+### C. In-App Remote Code/Text Editor:
+- Klik nama file teks pada panel remote (atau tombol `Edit File`) untuk membuka modal editor kode internal.
+- Dilengkapi shortcut `Ctrl+S` / `Cmd+S` untuk langsung menyimpan perubahan ke server remote secara instan tanpa perlu download dan upload manual.
 ---
 
 ## 2. Port Forwarding / SSH Tunnels
@@ -42,11 +48,10 @@ Memungkinkan pengalihan port aman melalui gateway SSH tanpa perlu mengetikkan pa
 2. **Remote Forwarding**: Meneruskan port remote server ke service yang berjalan di komputer lokal pengembang.
 3. **Dynamic SOCKS5 Proxy**: Membuat proxy terenkripsi dinamis di komputer lokal.
 
-### B. Tampilan Antarmuka:
-- Kartu visual yang menampilkan rute aliran data: `:localPort ➔ TYPE ➔ remoteHost:remotePort`.
-- Sakelar toggle switch (ON/OFF) interaktif dengan indikator status hijau (*Active Pulse*).
-- Modal pembuatan tunnel baru dengan pemilihan host SSH gateway.
-
+### B. Runtime & Arsitektur Jaringan:
+- **Real Socket Listener**: Backend menjalankan listener TCP nyata (`net.createServer`) dan SOCKS5 dynamic proxy (RFC 1928) yang tersambung langsung ke stream SSH `forwardOut`.
+- **Status Runtime Real-Time**: Antarmuka menampilkan status aktual listener (`● Listening :8080 (Aktif)`, `⚠️ Error: Port in use`, atau `○ Nonaktif`) beserta pesan error diagnostik jika terjadi benturan port.
+- **Auto-Boot Tunnels**: Tunnel yang berstatus aktif akan otomatis dijalankan saat aplikasi pertama kali menyala.
 ---
 
 ## 3. Cryptographic SSH Key Vault
@@ -65,7 +70,10 @@ Pengelola kunci kriptografi mandiri untuk menghubungkan server SSH tanpa passwor
 ---
 
 ## 4. Terminal Workspace Multi-Tab
-
-- Multi-Tab simultan: membuka beberapa sesi shell lokal (PowerShell, CMD, WSL, Git Bash) dan sesi remote SSH bersamaan.
-- Action Bar: Tombol *New Shell*, *Reconnect*, *Clear Screen*, dan *Close Tab*.
-- Quick Command Bar: Menampilkan cuplikan perintah (*snippets*) di bagian bawah terminal untuk dieksekusi ke sesi aktif hanya dalam 1 klik.
+- **Multi-Tab Simultan**: Membuka beberapa sesi shell lokal (PowerShell, CMD, WSL, Git Bash) dan sesi remote SSH bersamaan.
+- **Multi-Terminal Broadcast Input**: Tombol `Broadcast ON/OFF` pada toolbar terminal. Ketika aktif, setiap karakter yang diketikkan di terminal aktif akan otomatis diduplikasi ke seluruh tab terminal yang sedang terbuka.
+- **Session Logging**: Tombol `Save Log` untuk mengekspor seluruh riwayat buffer terminal aktif ke file `.log` lokal berstempel waktu.
+- **Interactive Snippet Variable Templates**: Cuplikan perintah yang memuat placeholder template seperti `{{container_id}}` atau `{{branch_name}}` akan memicu modal input interaktif untuk mengisi nilai sebelum dieksekusi ke shell.
+- **Startup Script / Automation**: Perintah otomatis yang langsung dieksekusi begitu koneksi SSH selesai diinisialisasi.
+- **ProxyJump / Bastion Gateway Chaining**: Menghubungkan terminal dan SFTP ke server internal di belakang bastion host melalui chaining socket SSH bawaan.
+- **Import ~/.ssh/config 1-Click**: Mengimpor seluruh host, port, user, private key, dan hierarki ProxyJump dari file konfigurasi OpenSSH lokal.

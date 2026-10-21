@@ -160,11 +160,13 @@ class LuluaXTermApp {
     this.localPath = '';
     this.selectedLocalFile = null;
     this.selectedRemoteFile = null;
+    this.broadcastEnabled = false;
+    this.currentEditingRemoteFile = null;
+    this.pendingSnippetCmd = null;
 
     this.currentUser = null;
     this.authMode = 'login';
     this.serverOnline = false;
-
     this.init();
   }
 
@@ -956,6 +958,30 @@ class LuluaXTermApp {
     resultBox.className = 'test-result';
     resultBox.style.display = 'none';
 
+    // Populate Key Vault dropdown (Termius Parity)
+    const keySelect = document.getElementById('host-key-id');
+    if (keySelect) {
+      keySelect.innerHTML = '<option value="">-- Custom Key di bawah atau Tidak Ada --</option>';
+      (this.keys || []).forEach(k => {
+        const opt = document.createElement('option');
+        opt.value = k.id;
+        opt.textContent = `${k.label} (${k.keyType})`;
+        keySelect.appendChild(opt);
+      });
+    }
+
+    // Populate ProxyJump / Bastion dropdown (Termius Parity)
+    const jumpSelect = document.getElementById('host-proxy-jump');
+    if (jumpSelect) {
+      jumpSelect.innerHTML = '<option value="">Direct Connection (Tanpa Bastion / Jump Host)</option>';
+      (this.hosts || []).filter(h => h.type === 'ssh' && (!hostId || h.id !== hostId)).forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h.id;
+        opt.textContent = `${h.label} (${h.username}@${h.hostname})`;
+        jumpSelect.appendChild(opt);
+      });
+    }
+
     if (hostId) {
       const h = this.hosts.find(x => x.id === hostId);
       if (!h) return;
@@ -977,6 +1003,9 @@ class LuluaXTermApp {
         document.getElementById('host-password').value = h.password || '';
         document.getElementById('host-key').value = h.privateKey || '';
         document.getElementById('host-passphrase').value = h.passphrase || '';
+        if (keySelect) keySelect.value = h.keyId || '';
+        if (jumpSelect) jumpSelect.value = h.proxyJumpHostId || '';
+        document.getElementById('host-startup-script').value = h.startupScript || '';
         this.toggleAuthType(h.authType || 'password');
         document.querySelector(`input[name="authType"][value="${h.authType || 'password'}"]`).checked = true;
       }
@@ -986,11 +1015,27 @@ class LuluaXTermApp {
       document.getElementById('host-id').value = '';
       document.getElementById('host-color').value = '#7b61ff';
       document.getElementById('color-hex-label').textContent = '#7b61ff';
+      if (keySelect) keySelect.value = '';
+      if (jumpSelect) jumpSelect.value = '';
+      document.getElementById('host-startup-script').value = '';
       this.switchHostTypeTab('ssh');
       this.toggleAuthType('password');
     }
 
     modal.classList.add('active');
+  }
+
+  onHostKeyVaultChange() {
+    const keyId = document.getElementById('host-key-id').value;
+    if (keyId && this.keys) {
+      const keyItem = this.keys.find(k => k.id === keyId);
+      if (keyItem) {
+        document.getElementById('host-key').value = keyItem.privateKey || '';
+        if (keyItem.passphrase) {
+          document.getElementById('host-passphrase').value = keyItem.passphrase;
+        }
+      }
+    }
   }
 
   switchHostTypeTab(type) {
@@ -1011,7 +1056,7 @@ class LuluaXTermApp {
     const resultBox = document.getElementById('test-connection-result');
     resultBox.className = 'test-result';
     resultBox.style.display = 'block';
-    resultBox.textContent = 'Testing SSH handshake and credentials...';
+    resultBox.textContent = 'Testing SSH handshake, Bastion, and credentials...';
 
     const payload = {
       hostname: document.getElementById('host-hostname').value,
@@ -1020,7 +1065,9 @@ class LuluaXTermApp {
       authType: document.querySelector('input[name="authType"]:checked').value,
       password: document.getElementById('host-password').value,
       privateKey: document.getElementById('host-key').value,
-      passphrase: document.getElementById('host-passphrase').value
+      passphrase: document.getElementById('host-passphrase').value,
+      keyId: document.getElementById('host-key-id')?.value || undefined,
+      proxyJumpHostId: document.getElementById('host-proxy-jump')?.value || undefined
     };
 
     try {
@@ -1062,6 +1109,9 @@ class LuluaXTermApp {
       payload.password = document.getElementById('host-password').value;
       payload.privateKey = document.getElementById('host-key').value;
       payload.passphrase = document.getElementById('host-passphrase').value;
+      payload.keyId = document.getElementById('host-key-id')?.value || undefined;
+      payload.proxyJumpHostId = document.getElementById('host-proxy-jump')?.value || undefined;
+      payload.startupScript = document.getElementById('host-startup-script')?.value || undefined;
     } else {
       payload.shellType = document.getElementById('host-shell-type').value;
     }
@@ -1083,6 +1133,49 @@ class LuluaXTermApp {
       }
     } catch (err) {
       alert('Error: ' + err.message);
+    }
+  }
+
+  showImportSshConfigModal() {
+    const resultBox = document.getElementById('ssh-config-import-result');
+    if (resultBox) {
+      resultBox.style.display = 'none';
+      resultBox.className = 'test-result';
+    }
+    const pathInput = document.getElementById('ssh-config-path-input');
+    if (pathInput) pathInput.value = '';
+    document.getElementById('modal-ssh-config-import').classList.add('active');
+  }
+
+  async executeImportSshConfig() {
+    const resultBox = document.getElementById('ssh-config-import-result');
+    resultBox.style.display = 'block';
+    resultBox.className = 'test-result';
+    resultBox.textContent = 'Membaca konfigurasi SSH dan mengimpor host...';
+
+    const customPath = document.getElementById('ssh-config-path-input').value.trim();
+    try {
+      const res = await fetch('/api/hosts/import-ssh-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customPath: customPath || undefined })
+      });
+      const data = await res.json();
+      if (data.success) {
+        resultBox.className = 'test-result success';
+        resultBox.textContent = `✓ Berhasil mengimpor ${data.importedCount} host baru (${data.skippedCount} dilewati karena sudah ada). Total host: ${data.totalCount}`;
+        await this.loadHosts();
+        await this.loadKeys();
+        setTimeout(() => {
+          this.closeModal('modal-ssh-config-import');
+        }, 1600);
+      } else {
+        resultBox.className = 'test-result error';
+        resultBox.textContent = '✗ ' + (data.error || 'Gagal mengimpor file config.');
+      }
+    } catch (err) {
+      resultBox.className = 'test-result error';
+      resultBox.textContent = '✗ Network error: ' + err.message;
     }
   }
 
@@ -1232,10 +1325,18 @@ class LuluaXTermApp {
       term.writeln('\r\n\x1b[90m[LuluaX-Term] Connection closed.\x1b[0m\r\n');
     };
 
-    // User typing input to shell
+    // User typing input to shell (with Termius-style Broadcast Input)
     term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'data', data }));
+      if (this.broadcastEnabled) {
+        this.sessions.forEach(sess => {
+          if (sess.ws && sess.ws.readyState === WebSocket.OPEN) {
+            sess.ws.send(JSON.stringify({ type: 'data', data }));
+          }
+        });
+      } else {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'data', data }));
+        }
       }
     });
 
@@ -1312,15 +1413,98 @@ class LuluaXTermApp {
     document.getElementById('active-tabs-count').textContent = count;
   }
 
+  toggleBroadcast() {
+    this.broadcastEnabled = !this.broadcastEnabled;
+    const btn = document.getElementById('btn-broadcast-toggle');
+    const badge = document.getElementById('broadcast-badge');
+    if (btn) btn.classList.toggle('broadcast-active', this.broadcastEnabled);
+    if (badge) {
+      badge.textContent = this.broadcastEnabled ? 'Broadcast ON' : 'Broadcast OFF';
+    }
+  }
+
+  saveSessionLog() {
+    if (!this.activeTabId || !this.sessions.has(this.activeTabId)) {
+      alert('Pilih tab terminal yang aktif terlebih dahulu.');
+      return;
+    }
+    const sess = this.sessions.get(this.activeTabId);
+    const buffer = sess.xterm.buffer.active;
+    let text = '';
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) text += line.translateToString(true) + '\n';
+    }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const hostLabel = (sess.host?.label || 'session').replace(/[^a-zA-Z0-9_-]/g, '_');
+    a.download = `terminal_${hostLabel}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   sendToActiveTerminal(cmd) {
     if (!this.activeTabId || !this.sessions.has(this.activeTabId)) {
       alert('Please open or select a terminal tab first.');
       this.switchView('terminals');
       return;
     }
+
+    // Check for {{variable}} placeholders (Termius Parity)
+    const matches = [...cmd.matchAll(/\{\{([^}]+)\}\}/g)];
+    if (matches.length > 0) {
+      const uniqueVars = [...new Set(matches.map(m => m[1].trim()))];
+      this.openSnippetVariablesModal(cmd, uniqueVars);
+      return;
+    }
+
     const sess = this.sessions.get(this.activeTabId);
     if (sess.ws && sess.ws.readyState === WebSocket.OPEN) {
       sess.ws.send(JSON.stringify({ type: 'data', data: cmd + '\n' }));
+      this.switchView('terminals');
+      sess.xterm.focus();
+    }
+  }
+
+  openSnippetVariablesModal(cmd, variables) {
+    this.pendingSnippetCmd = cmd;
+    const container = document.getElementById('snippet-variables-form-container');
+    container.innerHTML = '';
+    variables.forEach(varName => {
+      const row = document.createElement('div');
+      row.className = 'snippet-var-row';
+      row.innerHTML = `
+        <label class="snippet-var-label">${this.escapeHtml(varName)}</label>
+        <input type="text" class="form-input snippet-var-input" data-var="${this.escapeHtml(varName)}" placeholder="Nilai untuk {{${this.escapeHtml(varName)}}}">
+      `;
+      container.appendChild(row);
+    });
+    document.getElementById('modal-snippet-variables').classList.add('active');
+  }
+
+  executeSnippetWithVariables() {
+    if (!this.pendingSnippetCmd) return;
+    let finalCmd = this.pendingSnippetCmd;
+    const inputs = document.querySelectorAll('.snippet-var-input');
+    inputs.forEach(input => {
+      const varName = input.dataset.var;
+      const value = input.value || '';
+      const regex = new RegExp(`\\{\\{\\s*${varName}\\s*\\}\\}`, 'g');
+      finalCmd = finalCmd.replace(regex, value);
+    });
+
+    this.closeModal('modal-snippet-variables');
+    this.pendingSnippetCmd = null;
+
+    if (!this.activeTabId || !this.sessions.has(this.activeTabId)) {
+      alert('Pilih tab terminal yang aktif terlebih dahulu.');
+      return;
+    }
+    const sess = this.sessions.get(this.activeTabId);
+    if (sess.ws && sess.ws.readyState === WebSocket.OPEN) {
+      sess.ws.send(JSON.stringify({ type: 'data', data: finalCmd + '\n' }));
       this.switchView('terminals');
       sess.xterm.focus();
     }
@@ -1579,7 +1763,97 @@ class LuluaXTermApp {
   onSftpItemClick(itemPath, isDirectory) {
     if (isDirectory) {
       this.loadSftpDir(itemPath);
+    } else {
+      this.openSftpEditor(itemPath);
     }
+  }
+
+  async openSftpEditor(filePath) {
+    if (!this.sftp || !this.sftp.sessionId) {
+      alert('Hubungkan sesi SFTP terlebih dahulu.');
+      return;
+    }
+    this.currentEditingRemoteFile = filePath;
+    const filename = filePath.split('/').pop() || filePath;
+    document.getElementById('sftp-editor-filename').textContent = filename;
+    document.getElementById('sftp-editor-filepath').textContent = filePath;
+    const statusEl = document.getElementById('sftp-editor-status');
+    statusEl.textContent = 'Memuat file...';
+    statusEl.style.color = 'var(--text-muted)';
+    const textarea = document.getElementById('sftp-editor-content');
+    textarea.value = '';
+    document.getElementById('modal-sftp-editor').classList.add('active');
+
+    textarea.onkeydown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        this.saveSftpEditorContent();
+      }
+    };
+
+    try {
+      const res = await fetch('/api/sftp/read-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sftp.sessionId, filePath })
+      });
+      const data = await res.json();
+      if (data.success) {
+        textarea.value = data.content;
+        statusEl.textContent = 'Siap diedit (Ctrl+S untuk simpan)';
+        statusEl.style.color = 'var(--text-secondary)';
+      } else {
+        statusEl.textContent = 'Gagal memuat: ' + data.error;
+        statusEl.style.color = 'var(--danger)';
+      }
+    } catch (err) {
+      statusEl.textContent = 'Error: ' + err.message;
+      statusEl.style.color = 'var(--danger)';
+    }
+  }
+
+  async saveSftpEditorContent() {
+    if (!this.sftp || !this.sftp.sessionId || !this.currentEditingRemoteFile) return;
+    const content = document.getElementById('sftp-editor-content').value;
+    const statusEl = document.getElementById('sftp-editor-status');
+    statusEl.textContent = 'Menyimpan ke server...';
+    statusEl.style.color = 'var(--warning)';
+
+    try {
+      const res = await fetch('/api/sftp/write-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: this.sftp.sessionId,
+          filePath: this.currentEditingRemoteFile,
+          content
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        statusEl.textContent = '✓ Tersimpan di server (' + new Date().toLocaleTimeString() + ')';
+        statusEl.style.color = 'var(--success)';
+      } else {
+        statusEl.textContent = '✗ Gagal menyimpan: ' + data.error;
+        statusEl.style.color = 'var(--danger)';
+      }
+    } catch (err) {
+      statusEl.textContent = '✗ Error: ' + err.message;
+      statusEl.style.color = 'var(--danger)';
+    }
+  }
+
+  closeSftpEditor() {
+    this.closeModal('modal-sftp-editor');
+    this.currentEditingRemoteFile = null;
+  }
+
+  editSelectedRemoteFile() {
+    if (!this.selectedRemoteFile || this.selectedRemoteFile.isDirectory) {
+      alert('Pilih file remote (bukan folder) dari tabel terlebih dahulu.');
+      return;
+    }
+    this.openSftpEditor(this.selectedRemoteFile.fullPath);
   }
 
   async sftpMkdir(dirName) {
@@ -1849,6 +2123,19 @@ class LuluaXTermApp {
       card.className = 'tunnel-card';
       const host = this.hosts.find(h => h.id === t.hostId) || { label: 'Unknown Host' };
 
+      let statusColor = 'var(--text-muted)';
+      let statusText = '○ Nonaktif';
+      if (t.status === 'active') {
+        statusColor = 'var(--success)';
+        statusText = `● Listening :${t.localPort} (Aktif)`;
+      } else if (t.status === 'error') {
+        statusColor = 'var(--danger)';
+        statusText = `⚠️ Error: ${t.errorMessage || 'Gagal bind port atau gateway'}`;
+      } else if (t.enabled) {
+        statusColor = 'var(--warning)';
+        statusText = '⏳ Memulai listener...';
+      }
+
       card.innerHTML = `
         <div class="tunnel-header">
           <div>
@@ -1866,8 +2153,8 @@ class LuluaXTermApp {
           <span class="route-target">${this.escapeHtml(t.remoteHost)}:${t.remotePort}</span>
         </div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px">
-          <span style="font-size:11px; color:${t.enabled ? 'var(--success)' : 'var(--text-muted)'}">
-            ${t.enabled ? '● Tunnel Aktif' : '○ Nonaktif'}
+          <span style="font-size:11px; color:${statusColor}">
+            ${statusText}
           </span>
           <button class="btn-card-icon" title="Hapus Tunnel" onclick="app.deleteTunnel('${t.id}')">&times;</button>
         </div>

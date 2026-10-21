@@ -3,6 +3,7 @@ dotenv.config();
 
 import express, { type Request, type Response } from 'express';
 import http from 'http';
+import net from 'net';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -128,6 +129,177 @@ app.get('/api/system', (_req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
+// SSH & Bastion Connection Manager (Termius-Style)
+// -------------------------------------------------------------
+function buildSshConfig(host: HostItem): Record<string, unknown> {
+  const keys = readData<SshKeyItem[]>('keys.json', []);
+  const config: Record<string, unknown> = {
+    host: host.hostname,
+    port: parseInt(String(host.port || 22), 10) || 22,
+    username: host.username,
+    readyTimeout: 15000,
+    keepaliveInterval: 10000
+  };
+
+  if (host.authType === 'key') {
+    let resolvedKey = host.privateKey || '';
+    let resolvedPass = host.passphrase || '';
+    if (host.keyId) {
+      const keyItem = keys.find(k => k.id === host.keyId);
+      if (keyItem && keyItem.privateKey) {
+        resolvedKey = keyItem.privateKey;
+        if (keyItem.passphrase) resolvedPass = keyItem.passphrase;
+      }
+    }
+    if (resolvedKey) {
+      config.privateKey = resolvedKey;
+      if (resolvedPass) config.passphrase = resolvedPass;
+    } else {
+      config.password = host.password || '';
+    }
+  } else {
+    config.password = host.password || '';
+  }
+
+  return config;
+}
+
+function connectSsh(
+  targetHost: HostItem,
+  callbacks: {
+    onReady: (conn: SSHClient, jumpConn?: SSHClient) => void;
+    onError: (err: Error) => void;
+  }
+): { cancel: () => void } {
+  const hosts = readData<HostItem[]>('hosts.json', []);
+  const targetConfig = buildSshConfig(targetHost);
+
+  let targetConn: SSHClient | null = null;
+  let jumpConn: SSHClient | null = null;
+  let isCancelled = false;
+
+  const cancel = () => {
+    isCancelled = true;
+    if (targetConn) try { targetConn.end(); } catch {}
+    if (jumpConn) try { jumpConn.end(); } catch {}
+  };
+
+  if (targetHost.proxyJumpHostId) {
+    const jumpHost = hosts.find(h => h.id === targetHost.proxyJumpHostId);
+    if (!jumpHost || jumpHost.type !== 'ssh') {
+      callbacks.onError(new Error(`ProxyJump host "${targetHost.proxyJumpHostId}" not found or invalid`));
+      return { cancel };
+    }
+
+    const jumpConfig = buildSshConfig(jumpHost);
+    jumpConn = new SSHClient();
+
+    jumpConn.on('ready', () => {
+      if (isCancelled) return;
+      const targetPort = parseInt(String(targetHost.port || 22), 10) || 22;
+      jumpConn!.forwardOut('127.0.0.1', 0, targetHost.hostname || '127.0.0.1', targetPort, (err, stream) => {
+        if (err) {
+          callbacks.onError(new Error(`ProxyJump forwardOut failed: ${err.message}`));
+          jumpConn?.end();
+          return;
+        }
+        if (isCancelled) {
+          stream.destroy();
+          jumpConn?.end();
+          return;
+        }
+
+        targetConn = new SSHClient();
+        targetConn.on('ready', () => {
+          if (isCancelled) return;
+          callbacks.onReady(targetConn!, jumpConn || undefined);
+        });
+        targetConn.on('error', (targetErr) => {
+          callbacks.onError(targetErr);
+          jumpConn?.end();
+        });
+
+        const finalConfig: Record<string, unknown> = { ...targetConfig, sock: stream };
+        delete finalConfig.host;
+        delete finalConfig.port;
+        targetConn.connect(finalConfig);
+      });
+    });
+
+    jumpConn.on('error', (jumpErr) => {
+      callbacks.onError(new Error(`ProxyJump connection to "${jumpHost.label}" failed: ${jumpErr.message}`));
+    });
+
+    jumpConn.connect(jumpConfig);
+  } else {
+    targetConn = new SSHClient();
+    targetConn.on('ready', () => {
+      if (isCancelled) return;
+      callbacks.onReady(targetConn!);
+    });
+    targetConn.on('error', (err) => {
+      callbacks.onError(err);
+    });
+    targetConn.connect(targetConfig);
+  }
+
+  return { cancel };
+}
+
+function parseSshConfig(content: string): Array<Partial<HostItem> & { identityFilePath?: string; proxyJumpAlias?: string }> {
+  const lines = content.split(/\r?\n/);
+  const items: Array<Partial<HostItem> & { identityFilePath?: string; proxyJumpAlias?: string }> = [];
+  let current: (Partial<HostItem> & { identityFilePath?: string; proxyJumpAlias?: string }) | null = null;
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const parts = line.split(/\s+/);
+    const key = parts[0].toLowerCase();
+    const val = parts.slice(1).join(' ').replace(/^["']|["']$/g, '');
+
+    if (key === 'host') {
+      if (current && current.label && current.label !== '*') {
+        items.push(current);
+      }
+      if (val === '*') {
+        current = null;
+        continue;
+      }
+      current = {
+        label: val,
+        hostname: val,
+        type: 'ssh',
+        authType: 'password',
+        port: 22,
+        username: os.userInfo().username
+      };
+    } else if (current) {
+      if (key === 'hostname') {
+        current.hostname = val;
+      } else if (key === 'user') {
+        current.username = val;
+      } else if (key === 'port') {
+        const p = parseInt(val, 10);
+        if (!isNaN(p)) current.port = p;
+      } else if (key === 'identityfile') {
+        current.identityFilePath = val;
+        current.authType = 'key';
+      } else if (key === 'proxyjump') {
+        current.proxyJumpAlias = val;
+      }
+    }
+  }
+
+  if (current && current.label && current.label !== '*') {
+    items.push(current);
+  }
+
+  return items;
+}
+
+// -------------------------------------------------------------
 // Hosts API
 // -------------------------------------------------------------
 app.get('/api/hosts', (_req: Request, res: Response) => {
@@ -149,9 +321,12 @@ app.post('/api/hosts', (req: Request, res: Response) => {
     password: body.password || '',
     privateKey: body.privateKey || '',
     passphrase: body.passphrase || '',
+    keyId: body.keyId || '',
     group: body.group || 'Default',
     color: body.color || '#7b61ff',
     shellType: body.shellType || (os.platform() === 'darwin' ? 'zsh' : 'powershell'),
+    proxyJumpHostId: body.proxyJumpHostId || '',
+    startupScript: body.startupScript || '',
     createdAt: Date.now(),
     lastConnected: null
   };
@@ -178,69 +353,167 @@ app.delete('/api/hosts/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-// Test SSH connection
+// Import ~/.ssh/config (Termius Parity)
+app.post('/api/hosts/import-ssh-config', (req: Request, res: Response) => {
+  const reqBody: unknown = req.body;
+  const customPath = (reqBody && typeof reqBody === 'object' && 'customPath' in reqBody && typeof reqBody.customPath === 'string') ? reqBody.customPath : undefined;
+  const configPath = customPath || path.join(os.homedir(), '.ssh', 'config');
+  if (!fs.existsSync(configPath)) {
+    return res.status(404).json({ success: false, error: `SSH config not found at ${configPath}` });
+  }
+
+  try {
+    const content = fs.readFileSync(configPath, 'utf-8');
+    const existingHosts = readData<HostItem[]>('hosts.json', []);
+    const existingKeys = readData<SshKeyItem[]>('keys.json', []);
+    const parsed = parseSshConfig(content);
+
+    let importedCount = 0;
+    let skippedCount = 0;
+    const aliasToHostMap = new Map<string, HostItem>();
+
+    for (const item of parsed) {
+      if (!item.label) continue;
+      const already = existingHosts.find(h => h.label.toLowerCase() === item.label!.toLowerCase());
+      if (already) {
+        aliasToHostMap.set(item.label.toLowerCase(), already);
+        skippedCount++;
+        continue;
+      }
+
+      let privateKeyContent = '';
+      let keyId = '';
+      if (item.identityFilePath) {
+        let keyPath = item.identityFilePath;
+        if (keyPath.startsWith('~/') || keyPath === '~') {
+          keyPath = path.join(os.homedir(), keyPath.slice(2));
+        }
+        if (fs.existsSync(keyPath)) {
+          try {
+            privateKeyContent = fs.readFileSync(keyPath, 'utf-8');
+            const keyLabel = path.basename(keyPath);
+            const foundKey = existingKeys.find(k => k.label === keyLabel || k.privateKey === privateKeyContent);
+            if (foundKey) {
+              keyId = foundKey.id;
+            } else {
+              const newKey: SshKeyItem = {
+                id: `key_${uuidv4().slice(0, 8)}`,
+                label: `Imported (${keyLabel})`,
+                keyType: privateKeyContent.includes('OPENSSH PRIVATE KEY') ? 'ed25519' : 'rsa',
+                publicKey: '',
+                privateKey: privateKeyContent,
+                createdAt: Date.now()
+              };
+              existingKeys.push(newKey);
+              keyId = newKey.id;
+            }
+          } catch {}
+        }
+      }
+
+      const host: HostItem = {
+        id: uuidv4(),
+        label: item.label,
+        type: 'ssh',
+        hostname: item.hostname || item.label,
+        port: item.port || 22,
+        username: item.username || os.userInfo().username,
+        authType: (keyId || privateKeyContent) ? 'key' : 'password',
+        password: '',
+        privateKey: privateKeyContent,
+        keyId: keyId || undefined,
+        group: 'Imported',
+        color: '#34c759',
+        shellType: os.platform() === 'darwin' ? 'zsh' : 'powershell',
+        createdAt: Date.now(),
+        lastConnected: null
+      };
+
+      aliasToHostMap.set(item.label.toLowerCase(), host);
+      existingHosts.push(host);
+      importedCount++;
+    }
+
+    // Resolve ProxyJump aliases
+    for (const p of parsed) {
+      if (p.proxyJumpAlias && p.label) {
+        const targetHost = aliasToHostMap.get(p.label.toLowerCase());
+        const jumpHost = aliasToHostMap.get(p.proxyJumpAlias.toLowerCase());
+        if (targetHost && jumpHost) {
+          targetHost.proxyJumpHostId = jumpHost.id;
+        }
+      }
+    }
+
+    writeData('hosts.json', existingHosts);
+    writeData('keys.json', existingKeys);
+
+    res.json({
+      success: true,
+      importedCount,
+      skippedCount,
+      totalCount: existingHosts.length,
+      hosts: existingHosts
+    });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: 'Failed to import SSH config: ' + errorMsg });
+  }
+});
+
 app.post('/api/hosts/test', (req: Request, res: Response) => {
   const body = req.body as Partial<HostItem>;
-  const { hostname, port, username, authType, password, privateKey, passphrase } = body;
+  const { hostname, username } = body;
   if (!hostname || !username) {
     return res.status(400).json({ success: false, error: 'Host and username are required' });
   }
 
-  const conn = new SSHClient();
-  let finished = false;
+  const tempHost: HostItem = {
+    id: body.id || 'test_temp',
+    label: body.label || 'Test Host',
+    type: 'ssh',
+    hostname: body.hostname || '',
+    port: parseInt(String(body.port || 22), 10) || 22,
+    username: body.username || '',
+    authType: body.authType || 'password',
+    password: body.password || '',
+    privateKey: body.privateKey || '',
+    passphrase: body.passphrase || '',
+    keyId: body.keyId || '',
+    proxyJumpHostId: body.proxyJumpHostId || ''
+  };
 
+  let finished = false;
   const timer = setTimeout(() => {
     if (!finished) {
       finished = true;
-      conn.end();
-      res.json({ success: false, error: 'Connection timed out after 10 seconds' });
+      connHandle.cancel();
+      res.json({ success: false, error: 'Connection timed out after 15 seconds' });
     }
-  }, 10000);
+  }, 15000);
 
-  conn.on('ready', () => {
-    if (!finished) {
-      finished = true;
-      clearTimeout(timer);
-      conn.end();
-      res.json({ success: true, message: 'SSH Authentication Successful!' });
+  const connHandle = connectSsh(tempHost, {
+    onReady: (conn, jumpConn) => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timer);
+        try { conn.end(); } catch {}
+        try { jumpConn?.end(); } catch {}
+        res.json({
+          success: true,
+          message: 'SSH Authentication Successful!' + (tempHost.proxyJumpHostId ? ' (via ProxyJump Bastion)' : '')
+        });
+      }
+    },
+    onError: (err) => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timer);
+        res.json({ success: false, error: err.message || 'SSH connection failed' });
+      }
     }
   });
-
-  conn.on('error', (err: Error) => {
-    if (!finished) {
-      finished = true;
-      clearTimeout(timer);
-      res.json({ success: false, error: err.message || 'SSH connection failed' });
-    }
-  });
-
-  try {
-    const config: Record<string, unknown> = {
-      host: hostname,
-      port: parseInt(String(port || 22), 10) || 22,
-      username,
-      readyTimeout: 10000,
-      keepaliveInterval: 10000
-    };
-
-    if (authType === 'key' && privateKey) {
-      config.privateKey = privateKey;
-      if (passphrase) config.passphrase = passphrase;
-    } else {
-      config.password = password || '';
-    }
-
-    conn.connect(config);
-  } catch (err: unknown) {
-    if (!finished) {
-      finished = true;
-      clearTimeout(timer);
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      res.json({ success: false, error: errorMsg });
-    }
-  }
 });
-
 // -------------------------------------------------------------
 // Snippets API
 // -------------------------------------------------------------
@@ -410,12 +683,13 @@ interface SftpWrapper {
   mkdir: (dirPath: string, callback: (err: Error | null) => void) => void;
   rmdir: (dirPath: string, callback: (err: Error | null) => void) => void;
   unlink: (filePath: string, callback: (err: Error | null) => void) => void;
-  createReadStream: (filePath: string) => NodeJS.ReadableStream;
-  createWriteStream: (filePath: string) => NodeJS.WritableStream;
+  createReadStream: (filePath: string, options?: unknown) => NodeJS.ReadableStream;
+  createWriteStream: (filePath: string, options?: unknown) => NodeJS.WritableStream;
 }
 
 interface SftpSession {
   conn: SSHClient;
+  jumpConn?: SSHClient;
   sftp: SftpWrapper;
   hostId: string;
   connectedAt: number;
@@ -423,7 +697,8 @@ interface SftpSession {
 const sftpClients = new Map<string, SftpSession>();
 
 app.post('/api/sftp/connect', (req: Request, res: Response) => {
-  const { hostId } = req.body as { hostId?: string };
+  const reqBody: unknown = req.body;
+  const hostId = (reqBody && typeof reqBody === 'object' && 'hostId' in reqBody && typeof reqBody.hostId === 'string') ? reqBody.hostId : undefined;
   const hosts = readData<HostItem[]>('hosts.json', []);
   const host = hosts.find(h => h.id === hostId);
   if (!host || host.type !== 'ssh') {
@@ -431,44 +706,140 @@ app.post('/api/sftp/connect', (req: Request, res: Response) => {
   }
 
   const sessionId = uuidv4();
-  const conn = new SSHClient();
-
-  conn.on('ready', () => {
-    conn.sftp((err: Error | undefined, sftp: SFTPWrapper) => {
-      if (err) {
-        conn.end();
-        return res.status(500).json({ success: false, error: 'Failed to initialize SFTP: ' + err.message });
-      }
-      sftpClients.set(sessionId, { conn, sftp: sftp as unknown as SftpWrapper, hostId: host.id, connectedAt: Date.now() });
-      res.json({ success: true, sessionId, initialPath: '/home/' + host.username });
-    });
-  });
-
-  conn.on('error', (err: Error) => {
-    res.status(500).json({ success: false, error: err.message || 'SSH connection failed' });
-  });
-
-  try {
-    const config: Record<string, unknown> = {
-      host: host.hostname,
-      port: host.port || 22,
-      username: host.username,
-      readyTimeout: 10000,
-      keepaliveInterval: 10000
-    };
-    if (host.authType === 'key' && host.privateKey) {
-      config.privateKey = host.privateKey;
-      if (host.passphrase) config.passphrase = host.passphrase;
-    } else {
-      config.password = host.password || '';
+  let responded = false;
+  const timer = setTimeout(() => {
+    if (!responded) {
+      responded = true;
+      connHandle.cancel();
+      res.status(504).json({ success: false, error: 'SFTP connection timed out after 15s' });
     }
-    conn.connect(config);
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ success: false, error: errorMsg });
-  }
+  }, 15000);
+
+  const connHandle = connectSsh(host, {
+    onReady: (conn, jumpConn) => {
+      conn.sftp((err: Error | undefined, sftp: SFTPWrapper) => {
+        if (responded) {
+          try { conn.end(); } catch {}
+          try { jumpConn?.end(); } catch {}
+          return;
+        }
+        responded = true;
+        clearTimeout(timer);
+
+        if (err) {
+          try { conn.end(); } catch {}
+          try { jumpConn?.end(); } catch {}
+          return res.status(500).json({ success: false, error: 'Failed to initialize SFTP: ' + err.message });
+        }
+
+        sftpClients.set(sessionId, {
+          conn,
+          jumpConn,
+          sftp: sftp as unknown as SftpWrapper,
+          hostId: host.id,
+          connectedAt: Date.now()
+        });
+
+        res.json({ success: true, sessionId, initialPath: '/home/' + host.username });
+      });
+    },
+    onError: (err) => {
+      if (!responded) {
+        responded = true;
+        clearTimeout(timer);
+        res.status(500).json({ success: false, error: err.message || 'SSH connection failed' });
+      }
+    }
+  });
 });
 
+// Read remote file content for in-app code editor (Termius Parity)
+app.post('/api/sftp/read-file', (req: Request, res: Response) => {
+  const reqBody: unknown = req.body;
+  const sessionId = (reqBody && typeof reqBody === 'object' && 'sessionId' in reqBody && typeof reqBody.sessionId === 'string') ? reqBody.sessionId : undefined;
+  const filePath = (reqBody && typeof reqBody === 'object' && 'filePath' in reqBody && typeof reqBody.filePath === 'string') ? reqBody.filePath : undefined;
+
+  if (!sessionId || !filePath) return res.status(400).json({ success: false, error: 'Session ID and file path required' });
+  const session = sftpClients.get(sessionId);
+  if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired or not found' });
+
+  const stream = session.sftp.createReadStream(filePath);
+  const chunks: Buffer[] = [];
+  let totalLength = 0;
+  const MAX_SIZE = 2 * 1024 * 1024; // 2MB max for text editor
+  let hasError = false;
+
+  stream.on('data', (chunk: Buffer) => {
+    chunks.push(chunk);
+    totalLength += chunk.length;
+    if (totalLength > MAX_SIZE && !hasError) {
+      hasError = true;
+      (stream as unknown as { destroy: () => void }).destroy();
+      res.status(413).json({ success: false, error: 'File is too large for inline editor (max 2MB)' });
+    }
+  });
+
+  stream.on('end', () => {
+    if (!hasError) {
+      const content = Buffer.concat(chunks).toString('utf-8');
+      res.json({ success: true, path: filePath, content });
+    }
+  });
+
+  stream.on('error', (err: Error) => {
+    if (!hasError) {
+      hasError = true;
+      res.status(500).json({ success: false, error: 'Failed to read remote file: ' + err.message });
+    }
+  });
+});
+
+// Write remote file content from in-app code editor (Termius Parity)
+app.post('/api/sftp/write-file', (req: Request, res: Response) => {
+  const reqBody: unknown = req.body;
+  const sessionId = (reqBody && typeof reqBody === 'object' && 'sessionId' in reqBody && typeof reqBody.sessionId === 'string') ? reqBody.sessionId : undefined;
+  const filePath = (reqBody && typeof reqBody === 'object' && 'filePath' in reqBody && typeof reqBody.filePath === 'string') ? reqBody.filePath : undefined;
+  const content = (reqBody && typeof reqBody === 'object' && 'content' in reqBody && typeof reqBody.content === 'string') ? reqBody.content : undefined;
+
+  if (!sessionId || !filePath || content === undefined) {
+    return res.status(400).json({ success: false, error: 'Session ID, file path, and content required' });
+  }
+  const session = sftpClients.get(sessionId);
+  if (!session) return res.status(401).json({ success: false, error: 'SFTP session expired or not found' });
+
+  const stream = session.sftp.createWriteStream(filePath);
+  let responded = false;
+
+  stream.on('close', () => {
+    if (!responded) {
+      responded = true;
+      res.json({ success: true, path: filePath });
+    }
+  });
+
+  stream.on('error', (err: Error) => {
+    if (!responded) {
+      responded = true;
+      res.status(500).json({ success: false, error: 'Failed to save remote file: ' + err.message });
+    }
+  });
+
+  const buffer = Buffer.from(content, 'utf-8');
+  (stream as unknown as NodeJS.WritableStream).end(buffer);
+});
+
+// Disconnect SFTP session
+app.post('/api/sftp/disconnect', (req: Request, res: Response) => {
+  const reqBody: unknown = req.body;
+  const sessionId = (reqBody && typeof reqBody === 'object' && 'sessionId' in reqBody && typeof reqBody.sessionId === 'string') ? reqBody.sessionId : undefined;
+  if (sessionId && sftpClients.has(sessionId)) {
+    const session = sftpClients.get(sessionId)!;
+    try { session.conn.end(); } catch {}
+    try { session.jumpConn?.end(); } catch {}
+    sftpClients.delete(sessionId);
+  }
+  res.json({ success: true });
+});
 app.post('/api/sftp/list', (req: Request, res: Response) => {
   const { sessionId, path: dirPath } = req.body as { sessionId?: string; path?: string };
   if (!sessionId) return res.status(400).json({ success: false, error: 'Session ID required' });
@@ -616,9 +987,252 @@ app.post('/api/sftp/transfer-remote-to-local', (req: Request, res: Response) => 
 // -------------------------------------------------------------
 // Tunnels & Keys APIs
 // -------------------------------------------------------------
+interface ActiveTunnelRuntime {
+  tunnelId: string;
+  server?: net.Server;
+  sshConn?: SSHClient;
+  jumpConn?: SSHClient;
+  status: 'active' | 'inactive' | 'error';
+  errorMessage?: string;
+}
+
+const activeTunnels = new Map<string, ActiveTunnelRuntime>();
+
+function createSocks5Server(sshConn: SSHClient): net.Server {
+  return net.createServer((socket) => {
+    let state: 'AUTH' | 'REQ' | 'FORWARDING' = 'AUTH';
+    let buffer = Buffer.alloc(0);
+
+    socket.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+
+      if (state === 'AUTH') {
+        if (buffer.length < 2) return;
+        const version = buffer[0];
+        const nmethods = buffer[1];
+        if (version !== 0x05) {
+          socket.destroy();
+          return;
+        }
+        if (buffer.length < 2 + nmethods) return;
+        socket.write(Buffer.from([0x05, 0x00]));
+        buffer = buffer.subarray(2 + nmethods);
+        state = 'REQ';
+      }
+
+      if (state === 'REQ') {
+        if (buffer.length < 4) return;
+        const ver = buffer[0];
+        const cmd = buffer[1];
+        const atyp = buffer[3];
+        if (ver !== 0x05 || cmd !== 0x01) {
+          socket.write(Buffer.from([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+          socket.destroy();
+          return;
+        }
+
+        let destHost = '';
+        let headerLen = 0;
+
+        if (atyp === 0x01) {
+          if (buffer.length < 10) return;
+          destHost = `${buffer[4]}.${buffer[5]}.${buffer[6]}.${buffer[7]}`;
+          headerLen = 10;
+        } else if (atyp === 0x03) {
+          const domainLen = buffer[4];
+          if (buffer.length < 5 + domainLen + 2) return;
+          destHost = buffer.subarray(5, 5 + domainLen).toString('utf-8');
+          headerLen = 5 + domainLen + 2;
+        } else if (atyp === 0x04) {
+          if (buffer.length < 22) return;
+          const parts: string[] = [];
+          for (let i = 4; i < 20; i += 2) {
+            parts.push(buffer.readUInt16BE(i).toString(16));
+          }
+          destHost = parts.join(':');
+          headerLen = 22;
+        } else {
+          socket.destroy();
+          return;
+        }
+
+        const destPort = buffer.readUInt16BE(headerLen - 2);
+        const remainder = buffer.subarray(headerLen);
+        state = 'FORWARDING';
+        socket.removeAllListeners('data');
+
+        sshConn.forwardOut('127.0.0.1', socket.remotePort || 0, destHost, destPort, (err, stream) => {
+          if (err) {
+            try {
+              socket.write(Buffer.from([0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+              socket.destroy();
+            } catch {}
+            return;
+          }
+
+          socket.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+          if (remainder.length > 0) {
+            stream.write(remainder);
+          }
+          socket.pipe(stream).pipe(socket);
+
+          socket.on('error', () => stream.destroy());
+          stream.on('error', () => socket.destroy());
+        });
+      }
+    });
+
+    socket.on('error', () => {});
+  });
+}
+
+function startTunnel(tunnel: TunnelItem, onDone?: (success: boolean, err?: string) => void): void {
+  stopTunnel(tunnel.id);
+
+  const hosts = readData<HostItem[]>('hosts.json', []);
+  const host = hosts.find(h => h.id === tunnel.hostId);
+  if (!host || host.type !== 'ssh') {
+    const err = 'SSH Host for tunnel not found';
+    activeTunnels.set(tunnel.id, { tunnelId: tunnel.id, status: 'error', errorMessage: err });
+    onDone?.(false, err);
+    return;
+  }
+
+  activeTunnels.set(tunnel.id, { tunnelId: tunnel.id, status: 'inactive' });
+
+  connectSsh(host, {
+    onReady: (sshConn, jumpConn) => {
+      if (tunnel.tunnelType === 'local') {
+        const tcpServer = net.createServer((socket) => {
+          sshConn.forwardOut('127.0.0.1', socket.remotePort || 0, tunnel.remoteHost, tunnel.remotePort, (err, stream) => {
+            if (err) {
+              socket.destroy();
+              return;
+            }
+            socket.pipe(stream).pipe(socket);
+            socket.on('error', () => stream.destroy());
+            stream.on('error', () => socket.destroy());
+          });
+          socket.on('error', () => {});
+        });
+
+        tcpServer.listen(tunnel.localPort, '127.0.0.1', () => {
+          activeTunnels.set(tunnel.id, {
+            tunnelId: tunnel.id,
+            server: tcpServer,
+            sshConn,
+            jumpConn,
+            status: 'active'
+          });
+          onDone?.(true);
+        });
+
+        tcpServer.on('error', (err: Error) => {
+          activeTunnels.set(tunnel.id, {
+            tunnelId: tunnel.id,
+            status: 'error',
+            errorMessage: `Port ${tunnel.localPort} error: ${err.message}`
+          });
+          try { sshConn.end(); } catch {}
+          try { jumpConn?.end(); } catch {}
+          onDone?.(false, err.message);
+        });
+
+      } else if (tunnel.tunnelType === 'socks5') {
+        const socksServer = createSocks5Server(sshConn);
+        socksServer.listen(tunnel.localPort, '127.0.0.1', () => {
+          activeTunnels.set(tunnel.id, {
+            tunnelId: tunnel.id,
+            server: socksServer,
+            sshConn,
+            jumpConn,
+            status: 'active'
+          });
+          onDone?.(true);
+        });
+
+        socksServer.on('error', (err: Error) => {
+          activeTunnels.set(tunnel.id, {
+            tunnelId: tunnel.id,
+            status: 'error',
+            errorMessage: `SOCKS5 Port ${tunnel.localPort} error: ${err.message}`
+          });
+          try { sshConn.end(); } catch {}
+          try { jumpConn?.end(); } catch {}
+          onDone?.(false, err.message);
+        });
+
+      } else if (tunnel.tunnelType === 'remote') {
+        sshConn.forwardIn(tunnel.remoteHost || '127.0.0.1', tunnel.remotePort, (err) => {
+          if (err) {
+            activeTunnels.set(tunnel.id, {
+              tunnelId: tunnel.id,
+              status: 'error',
+              errorMessage: `Remote forward error: ${err.message}`
+            });
+            try { sshConn.end(); } catch {}
+            try { jumpConn?.end(); } catch {}
+            onDone?.(false, err.message);
+            return;
+          }
+
+          sshConn.on('tcp connection', (_info, accept) => {
+            const localSocket = net.connect(tunnel.localPort, '127.0.0.1', () => {
+              const remoteStream = accept();
+              localSocket.pipe(remoteStream).pipe(localSocket);
+              localSocket.on('error', () => remoteStream.destroy());
+              remoteStream.on('error', () => localSocket.destroy());
+            });
+            localSocket.on('error', () => {});
+          });
+
+          activeTunnels.set(tunnel.id, {
+            tunnelId: tunnel.id,
+            sshConn,
+            jumpConn,
+            status: 'active'
+          });
+          onDone?.(true);
+        });
+      }
+    },
+    onError: (err) => {
+      activeTunnels.set(tunnel.id, {
+        tunnelId: tunnel.id,
+        status: 'error',
+        errorMessage: err.message
+      });
+      onDone?.(false, err.message);
+    }
+  });
+}
+
+function stopTunnel(tunnelId: string): void {
+  const active = activeTunnels.get(tunnelId);
+  if (!active) return;
+  if (active.server) {
+    try { active.server.close(); } catch {}
+  }
+  if (active.sshConn) {
+    try { active.sshConn.end(); } catch {}
+  }
+  if (active.jumpConn) {
+    try { active.jumpConn.end(); } catch {}
+  }
+  activeTunnels.delete(tunnelId);
+}
+
 app.get('/api/tunnels', (_req: Request, res: Response) => {
   const tunnels = readData<TunnelItem[]>('tunnels.json', []);
-  res.json({ success: true, tunnels });
+  const enriched = tunnels.map(t => {
+    const active = activeTunnels.get(t.id);
+    return {
+      ...t,
+      status: active ? active.status : (t.enabled ? 'active' : 'inactive'),
+      errorMessage: active?.errorMessage
+    };
+  });
+  res.json({ success: true, tunnels: enriched });
 });
 
 app.post('/api/tunnels', (req: Request, res: Response) => {
@@ -633,29 +1247,55 @@ app.post('/api/tunnels', (req: Request, res: Response) => {
     remoteHost: body.remoteHost || '127.0.0.1',
     remotePort: Number(body.remotePort || 80),
     enabled: Boolean(body.enabled),
+    status: 'inactive',
     createdAt: Date.now()
   };
   tunnels.push(newTunnel);
   writeData('tunnels.json', tunnels);
+
+  if (newTunnel.enabled) {
+    startTunnel(newTunnel, (ok, err) => {
+      newTunnel.status = ok ? 'active' : 'error';
+      newTunnel.errorMessage = err;
+      writeData('tunnels.json', tunnels);
+    });
+  }
+
   res.json({ success: true, tunnel: newTunnel });
 });
 
 app.post('/api/tunnels/:id/toggle', (req: Request, res: Response) => {
+  const tunnelId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const tunnels = readData<TunnelItem[]>('tunnels.json', []);
-  const tunnel = tunnels.find(t => t.id === req.params.id);
+  const tunnel = tunnels.find(t => t.id === tunnelId);
   if (!tunnel) return res.status(404).json({ success: false, error: 'Tunnel not found' });
-  tunnel.enabled = !tunnel.enabled;
-  writeData('tunnels.json', tunnels);
-  res.json({ success: true, enabled: tunnel.enabled });
+
+  if (tunnel.enabled) {
+    stopTunnel(tunnel.id);
+    tunnel.enabled = false;
+    tunnel.status = 'inactive';
+    tunnel.errorMessage = undefined;
+    writeData('tunnels.json', tunnels);
+    return res.json({ success: true, enabled: false, status: 'inactive' });
+  } else {
+    tunnel.enabled = true;
+    startTunnel(tunnel, (ok, err) => {
+      tunnel.status = ok ? 'active' : 'error';
+      tunnel.errorMessage = err;
+      writeData('tunnels.json', tunnels);
+    });
+    return res.json({ success: true, enabled: true, status: 'active' });
+  }
 });
 
 app.delete('/api/tunnels/:id', (req: Request, res: Response) => {
+  const tunnelId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  stopTunnel(tunnelId);
   let tunnels = readData<TunnelItem[]>('tunnels.json', []);
-  tunnels = tunnels.filter(t => t.id !== req.params.id);
+  tunnels = tunnels.filter(t => t.id !== tunnelId);
   writeData('tunnels.json', tunnels);
   res.json({ success: true });
 });
-
 app.get('/api/keys', (_req: Request, res: Response) => {
   const keys = readData<SshKeyItem[]>('keys.json', []);
   res.json({ success: true, keys });
@@ -734,6 +1374,7 @@ interface ActiveTerminalSession {
   type: 'local' | 'ssh';
   pty?: IPty;
   conn?: SSHClient;
+  jumpConn?: SSHClient;
   stream?: ClientChannel;
 }
 
@@ -783,57 +1424,59 @@ wss.on('connection', (ws: WebSocket) => {
           ws.send(JSON.stringify({ type: 'status', status: 'connected', message: `Started ${host.label} (${shellExe})` }));
 
         } else if (host.type === 'ssh') {
-          const conn = new SSHClient();
-          ws.send(JSON.stringify({ type: 'status', status: 'connecting', message: `Connecting to ${host.username}@${host.hostname}...` }));
+          ws.send(JSON.stringify({
+            type: 'status',
+            status: 'connecting',
+            message: `Connecting to ${host.username}@${host.hostname}${host.proxyJumpHostId ? ' (via Bastion)' : ''}...`
+          }));
 
-          conn.on('ready', () => {
-            conn.shell({ term: 'xterm-256color', cols, rows }, (err: Error | undefined, stream: ClientChannel) => {
-              if (err) {
-                ws.send(JSON.stringify({ type: 'error', message: 'Shell init error: ' + err.message }));
-                conn.end();
-                return;
-              }
+          connectSsh(host, {
+            onReady: (conn, jumpConn) => {
+              conn.shell({ term: 'xterm-256color', cols, rows }, (err: Error | undefined, stream: ClientChannel) => {
+                if (err) {
+                  ws.send(JSON.stringify({ type: 'error', message: 'Shell init error: ' + err.message }));
+                  try { conn.end(); } catch {}
+                  try { jumpConn?.end(); } catch {}
+                  return;
+                }
 
-              terminalSession = { type: 'ssh', conn, stream };
+                terminalSession = { type: 'ssh', conn, jumpConn, stream };
 
-              stream.on('data', (chunk: Buffer) => {
-                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'data', data: chunk.toString('utf-8') }));
-              });
+                stream.on('data', (chunk: Buffer) => {
+                  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'data', data: chunk.toString('utf-8') }));
+                });
 
-              stream.on('close', () => {
-                conn.end();
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({ type: 'status', status: 'disconnected', message: 'SSH session closed.' }));
+                stream.on('close', () => {
+                  try { conn.end(); } catch {}
+                  try { jumpConn?.end(); } catch {}
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'status', status: 'disconnected', message: 'SSH session closed.' }));
+                  }
+                });
+
+                ws.send(JSON.stringify({
+                  type: 'status',
+                  status: 'connected',
+                  message: `Connected to ${host.username}@${host.hostname}${host.proxyJumpHostId ? ' (via Bastion)' : ''}`
+                }));
+
+                // Auto-run startup script if defined (Termius Parity)
+                if (host.startupScript) {
+                  setTimeout(() => {
+                    try {
+                      stream.write(host.startupScript + '\n');
+                    } catch {}
+                  }, 400);
                 }
               });
-
-              ws.send(JSON.stringify({ type: 'status', status: 'connected', message: `Connected to ${host.username}@${host.hostname}` }));
-            });
-          });
-
-          conn.on('error', (err: Error) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'error', message: `SSH Error: ${err.message}` }));
-              ws.send(JSON.stringify({ type: 'status', status: 'error', message: err.message }));
+            },
+            onError: (err: Error) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'error', message: `SSH Error: ${err.message}` }));
+                ws.send(JSON.stringify({ type: 'status', status: 'error', message: err.message }));
+              }
             }
           });
-
-          const sshConfig: Record<string, unknown> = {
-            host: host.hostname,
-            port: parseInt(String(host.port || 22), 10) || 22,
-            username: host.username,
-            readyTimeout: 15000,
-            keepaliveInterval: 10000
-          };
-
-          if (host.authType === 'key' && host.privateKey) {
-            sshConfig.privateKey = host.privateKey;
-            if (host.passphrase) sshConfig.passphrase = host.passphrase;
-          } else {
-            sshConfig.password = host.password || '';
-          }
-
-          conn.connect(sshConfig);
         }
 
       } else if (data.type === 'data' && data.data) {
@@ -863,8 +1506,10 @@ wss.on('connection', (ws: WebSocket) => {
     if (terminalSession) {
       if (terminalSession.type === 'local' && terminalSession.pty) {
         try { terminalSession.pty.kill(); } catch {}
-      } else if (terminalSession.type === 'ssh' && terminalSession.conn) {
-        try { terminalSession.conn.end(); } catch {}
+      } else if (terminalSession.type === 'ssh') {
+        try { terminalSession.stream?.end(); } catch {}
+        try { terminalSession.conn?.end(); } catch {}
+        try { terminalSession.jumpConn?.end(); } catch {}
       }
       terminalSession = null;
     }
@@ -877,3 +1522,16 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  Local URL: http://127.0.0.1:${PORT}                  `);
   console.log(`======================================================\n`);
 });
+// Auto-start enabled tunnels on boot (Termius Parity)
+setTimeout(() => {
+  try {
+    const tunnels = readData<TunnelItem[]>('tunnels.json', []);
+    for (const t of tunnels) {
+      if (t.enabled) {
+        startTunnel(t);
+      }
+    }
+  } catch (err: unknown) {
+    console.warn('Auto-start tunnels warning:', err);
+  }
+}, 2000);

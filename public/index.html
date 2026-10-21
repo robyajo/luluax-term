@@ -149,6 +149,14 @@
               </svg>
               <input type="text" id="host-search" placeholder="Search hosts by name, IP, group...">
             </div>
+            <button class="btn btn-secondary" id="btn-import-ssh-config" onclick="app.showImportSshConfigModal()" style="margin-right: 8px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Import SSH Config</span>
+            </button>
             <button class="btn btn-primary" id="btn-add-host">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -176,6 +184,20 @@
             <!-- Dynamic terminal tabs -->
           </div>
           <div class="tab-bar-actions">
+            <button class="tab-action-btn" id="btn-broadcast-toggle" title="Toggle Broadcast Input (Type to all active terminals)" onclick="app.toggleBroadcast()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9m14.2 0c3.9 3.9 3.9 10.3 0 14.2M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5m8.4 0c2.3 2.3 2.3 6.1 0 8.5M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path>
+              </svg>
+              <span id="broadcast-badge" class="broadcast-badge">Broadcast OFF</span>
+            </button>
+            <button class="tab-action-btn" id="btn-download-log" title="Save Terminal Session Log (.log file)" onclick="app.saveSessionLog()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Save Log</span>
+            </button>
             <button class="tab-action-btn" id="btn-quick-local" title="Open Local PowerShell Tab">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -290,6 +312,13 @@
             <button class="btn btn-secondary btn-transfer" id="btn-transfer-download" title="Download file yang dipilih ke Lokal">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
               <span>Download</span>
+            </button>
+            <button class="btn btn-secondary btn-transfer" id="btn-sftp-edit-file" title="Edit file remote terpilih di code editor" onclick="app.editSelectedRemoteFile()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+              <span>Edit File</span>
             </button>
             <span id="transfer-status-msg" class="transfer-status-msg"></span>
           </div>
@@ -612,6 +641,12 @@
 
           <div id="group-key" style="display:none">
             <div class="form-group">
+              <label>Pilih dari SSH Key Vault (Opsional)</label>
+              <select id="host-key-id" class="form-select" onchange="app.onHostKeyVaultChange()">
+                <option value="">-- Custom Key di bawah atau Tidak Ada --</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label>Private Key (OpenSSH, PEM, RSA, Ed25519)</label>
               <textarea id="host-key" class="form-textarea" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."></textarea>
             </div>
@@ -619,6 +654,18 @@
               <label>Key Passphrase (optional)</label>
               <input type="password" id="host-passphrase" class="form-input" placeholder="Passphrase for encrypted key">
             </div>
+          </div>
+
+          <div class="form-group">
+            <label>ProxyJump / Bastion Gateway (Chaining)</label>
+            <select id="host-proxy-jump" class="form-select">
+              <option value="">Direct Connection (Tanpa Bastion / Jump Host)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Startup Command / Script (Dijalankan otomatis saat konek)</label>
+            <input type="text" id="host-startup-script" class="form-input" placeholder="e.g. cd /var/www && docker compose ps">
           </div>
         </div>
 
@@ -821,6 +868,79 @@
         <button type="button" class="btn btn-primary" id="btn-retry-global-error" onclick="app.retryServerConnection()">
           🔄 Hubungkan Ulang
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: IMPORT SSH CONFIG -->
+  <div class="modal-backdrop" id="modal-ssh-config-import">
+    <div class="modal-dialog" style="max-width: 520px">
+      <div class="modal-header">
+        <h3>Import Hosts dari ~/.ssh/config</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-ssh-config-import')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px">
+          LuluaX-Term akan membaca file konfigurasi OpenSSH lokal di komputer Anda, mengimpor semua host, port, user, private key, dan aturan ProxyJump secara otomatis (seperti Termius).
+        </p>
+        <div class="form-group">
+          <label>Path File Konfigurasi (Default: ~/.ssh/config)</label>
+          <input type="text" id="ssh-config-path-input" class="form-input" placeholder="Kosongkan untuk ~/.ssh/config bawaan">
+        </div>
+        <div id="ssh-config-import-result" class="test-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-text" onclick="app.closeModal('modal-ssh-config-import')">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="app.executeImportSshConfig()">Mulai Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: IN-APP SFTP CODE/TEXT EDITOR -->
+  <div class="modal-backdrop" id="modal-sftp-editor">
+    <div class="modal-dialog" style="max-width: 850px; width: 90vw;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px">
+          <span style="font-size:16px;">📝</span>
+          <div>
+            <h3 id="sftp-editor-filename" style="margin:0; font-size:15px;">Remote File Editor</h3>
+            <span id="sftp-editor-filepath" style="font-size:11px; color:var(--text-secondary)"></span>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px">
+          <span id="sftp-editor-status" style="font-size:12px; color:var(--text-muted)"></span>
+          <button class="modal-close" onclick="app.closeSftpEditor()">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding:14px 16px;">
+        <textarea id="sftp-editor-content" class="sftp-code-textarea" spellcheck="false" placeholder="Loading file content..."></textarea>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between">
+        <span style="font-size:11px; color:var(--text-muted)">Shortcut: Ctrl+S untuk menyimpan perubahan langsung ke server remote</span>
+        <div style="display:flex; gap:8px">
+          <button type="button" class="btn btn-secondary" onclick="app.closeSftpEditor()">Tutup</button>
+          <button type="button" class="btn btn-primary" id="btn-sftp-editor-save" onclick="app.saveSftpEditorContent()">Simpan Perubahan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SNIPPET VARIABLES PLACEHOLDER -->
+  <div class="modal-backdrop" id="modal-snippet-variables">
+    <div class="modal-dialog" style="max-width: 480px">
+      <div class="modal-header">
+        <h3 id="snippet-var-modal-title">Isi Parameter Perintah</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-snippet-variables')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px">
+          Snippet ini memiliki variabel template. Isi nilai parameter berikut sebelum dieksekusi ke terminal aktif:
+        </p>
+        <div id="snippet-variables-form-container"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-text" onclick="app.closeModal('modal-snippet-variables')">Batal</button>
+        <button type="button" class="btn btn-primary" id="btn-run-snippet-variables" onclick="app.executeSnippetWithVariables()">Jalankan Perintah</button>
       </div>
     </div>
   </div>

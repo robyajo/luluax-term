@@ -13,6 +13,8 @@ export interface HostItem {
   group?: string;
   color?: string;
   shellType?: string;
+  proxyJumpHostId?: string;
+  startupScript?: string;
   createdAt?: number;
   lastConnected?: number | null;
 }
@@ -37,6 +39,8 @@ export interface TunnelItem {
   remoteHost: string;
   remotePort: number;
   enabled: boolean;
+  status?: 'active' | 'inactive' | 'error';
+  errorMessage?: string;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -75,4 +79,17 @@ export interface LocalFileEntry {
   size: number;
   modifyTime: number;
   fullPath: string;
+}
+
+export interface RemoteFileContent {
+  sessionId: string;
+  path: string;
+  content: string;
+  encoding?: string;
+}
+
+export interface ImportSshConfigResult {
+  importedCount: number;
+  skippedCount: number;
+  hosts: HostItem[];
 }

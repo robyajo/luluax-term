@@ -1835,3 +1835,51 @@ input:checked + .slider:before {
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* Broadcast Toggle Styles (Termius Parity) */
+.tab-action-btn.broadcast-active {
+  background-color: rgba(255, 82, 82, 0.2) !important;
+  border-color: #ff5252 !important;
+  color: #ff5252 !important;
+}
+
+.broadcast-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* In-App SFTP Code Editor (Termius Parity) */
+.sftp-code-textarea {
+  width: 100%;
+  height: 480px;
+  background-color: #0b0f19;
+  color: #e2e8f0;
+  font-family: var(--font-mono, 'Consolas', 'Courier New', monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px 14px;
+  resize: vertical;
+  outline: none;
+  tab-size: 4;
+  box-sizing: border-box;
+}
+
+.sftp-code-textarea:focus {
+  border-color: var(--accent);
+}
+
+/* Snippet Variable Templates (Termius Parity) */
+.snippet-var-row {
+  margin-bottom: 12px;
+}
+
+.snippet-var-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 5px;
+}
