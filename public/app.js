@@ -579,7 +579,7 @@ class LuluaXTermApp {
       const res = await fetch('/api/system');
       const data = await res.json();
       if (data.success) {
-        let versionStr = '1.0.2';
+        let versionStr = '1.0.3';
         if (window.electronAPI && window.electronAPI.getAppVersion) {
           try {
             versionStr = await window.electronAPI.getAppVersion();

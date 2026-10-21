@@ -117,7 +117,7 @@ app.get('/api/system', (_req: Request, res: Response) => {
     platformLabel = `Linux (${arch})`;
   }
 
-  let appVersion = '1.0.2';
+  let appVersion = '1.0.3';
   try {
     const pkgPath = path.join(PROJECT_ROOT, 'package.json');
     if (fs.existsSync(pkgPath)) {

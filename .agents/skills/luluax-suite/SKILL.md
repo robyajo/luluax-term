@@ -48,11 +48,12 @@ Ekosistem LuluaX terdiri dari 3 aplikasi modular:
 
 ---
 
-## 4. Lokasi File Binary Executable Windows
+## 4. Lokasi File Binary Executable Windows (v1.0.3)
 
-- `luluax-term/dist/LuluaX-Term 1.0.0.exe` (Portable Single-file EXE ~103 MB)
-- `luluax-request/dist/LuluaX-Request 1.0.0.exe` (Portable Single-file EXE ~100 MB)
-
+- `luluax-term/dist/LuluaX-Term Setup 1.0.3.exe` (NSIS Installer ~117 MB)
+- `luluax-term/dist/LuluaX-Term 1.0.3.exe` (Portable Single-file EXE ~117 MB)
+- `luluax-request/dist/LuluaX-Request Setup 1.0.3.exe` (NSIS Installer ~112 MB)
+- `luluax-request/dist/LuluaX-Request 1.0.3.exe` (Portable Single-file EXE ~111 MB)
 ---
 
 ## 5. Invarian & Aturan Teknis Agen AI

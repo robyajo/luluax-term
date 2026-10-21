@@ -8,7 +8,7 @@ Aplikasi terminal dan SSH client modern, cepat, dan ringan yang terinspirasi dar
 
 | Komponen | Spesifikasi & Teknologi |
 | :--- | :--- |
-| **Nama Aplikasi** | **LuluaX-Term** (`v1.0.0`) |
+| **Nama Aplikasi** | **LuluaX-Term** (`v1.0.3`) |
 | **Sistem Operasi** | **Windows 10/11** (x64/ARM64) & **macOS Apple Silicon** (M1/M2/M3/M4 Series / arm64) |
 | **Engine Terminal** | Mesin xterm.js v6.0 dengan FitAddon & WebLinksAddon |
 | **Local PTY** | Windows ConPTY (`powershell.exe`, `cmd.exe`, `bash.exe`, `wsl.exe`) & macOS Native PTY (`/bin/zsh`, `/bin/bash`, `fish`) |
