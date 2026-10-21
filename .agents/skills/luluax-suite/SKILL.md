@@ -7,7 +7,7 @@ description: "Master architecture and development knowledge base for the entire 
 
 Ekosistem LuluaX terdiri dari 3 aplikasi modular:
 
-1. **`luluax-term`** (Port 3980): Terminal & SSH Client (rekonstruksi fitur khas **Termius**).
+1. **`ErTerm` / `luluax-term`** (Port 3980): Modern React 19 + Vite + shadcn/ui SSH & Terminal Client (pengembangan aktif berpusat di `ErTerm`).
 2. **`luluax-request`** (Port 3990): API Client & HTTP Interceptor (rekonstruksi fitur khas **Requestly**).
 3. **`backend`** (Port 4000 / Production Vercel): Cloud Backend modular (**Hono + Drizzle ORM + Neon PostgreSQL**).
 
