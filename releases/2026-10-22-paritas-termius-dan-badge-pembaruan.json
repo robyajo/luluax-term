@@ -5,8 +5,8 @@
     "name": "LuluaX-Term"
   },
   "title": {
-    "id": "Pembaruan Fitur Koneksi Lengkap, Editor Berkas Remote, dan Indikator Pembaruan",
-    "en": "Comprehensive Connection Features, Remote File Editor, and Update Badge"
+    "id": "Rilis v1.0.3 — Pembaruan Fitur Koneksi Lengkap, Editor Berkas Remote, dan Indikator Pembaruan",
+    "en": "Release v1.0.3 — Comprehensive Connection Features, Remote File Editor, and Update Badge"
   },
   "body": {
     "id": "Pembaruan besar ini menghadirkan fitur penerusan port jaringan aktif, dukungan server perantara (jump host), impor otomatis konfigurasi server, editor berkas terintegrasi langsung di server remote, pengetikan serentak ke banyak terminal, serta penampil versi terpasang dan lencana pembaruan di pojok kanan atas.",
