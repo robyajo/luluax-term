@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-22",
+  "type": "feature",
+  "project": {
+    "name": "LuluaX-Term"
+  },
+  "title": {
+    "id": "Pembaruan Fitur Koneksi Lengkap, Editor Berkas Remote, dan Indikator Pembaruan",
+    "en": "Comprehensive Connection Features, Remote File Editor, and Update Badge"
+  },
+  "body": {
+    "id": "Pembaruan besar ini menghadirkan fitur penerusan port jaringan aktif, dukungan server perantara (jump host), impor otomatis konfigurasi server, editor berkas terintegrasi langsung di server remote, pengetikan serentak ke banyak terminal, serta penampil versi terpasang dan lencana pembaruan di pojok kanan atas.",
+    "en": "This major update introduces active network port forwarding, jump host bastion support, automated server configuration import, direct remote file editing, synchronized multi-terminal typing, as well as an installed version display and top-right update badge."
+  },
+  "items": [
+    {
+      "type": "feature",
+      "id": "Penerusan Port & Proksi Aktif: Dukungan pengalihan port lokal, remote, dan proksi dinamis dengan pemantauan status koneksi secara langsung.",
+      "en": "Active Port Forwarding & Proxy: Support for local, remote, and dynamic proxy port forwarding with real-time connection status monitoring."
+    },
+    {
+      "type": "feature",
+      "id": "Dukungan Server Perantara (Bastion): Menghubungkan terminal dan transfer berkas ke server privat internal melalui server loncat.",
+      "en": "Bastion Jump Host Support: Connect terminal and file transfer sessions to private internal servers through an intermediary gateway."
+    },
+    {
+      "type": "feature",
+      "id": "Editor Berkas Remote Langsung: Membuka dan mengubah berkas di server secara instan dari pengelola berkas dengan tombol simpan cepat.",
+      "en": "Direct Remote File Editor: Open and modify files on remote servers instantly from the file manager with fast save shortcuts."
+    },
+    {
+      "type": "feature",
+      "id": "Pengetikan Serentak (Broadcast): Mengirimkan ketikan perintah ke seluruh sesi terminal yang sedang terbuka secara bersamaan.",
+      "en": "Broadcast Typing: Send command keystrokes to all open active terminal sessions simultaneously."
+    },
+    {
+      "type": "feature",
+      "id": "Impor Konfigurasi Otomatis: Membaca daftar server yang sudah ada di komputer Anda dan memasukkannya hanya dengan satu klik.",
+      "en": "Automated Configuration Import: Detect and import existing server lists on your computer with a single click."
+    },
+    {
+      "type": "update",
+      "id": "Penampil Versi Terpasang & Lencana Pembaruan: Nomor versi rilis kini ditampilkan jelas di bilah navigasi dan lencana animasi akan muncul di kanan atas jika tersedia versi baru.",
+      "en": "Installed Version Display & Update Badge: The installed version is now clearly shown on navigation bars, with an animated badge in the top-right corner when an update is available."
+    }
+  ]
+}
