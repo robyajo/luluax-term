@@ -14,9 +14,13 @@ export interface ProgressInfoPayload {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('get-app-version'),
   checkForUpdate: (): Promise<unknown> => ipcRenderer.invoke('check-for-update'),
   downloadUpdate: (): Promise<unknown> => ipcRenderer.invoke('download-update'),
   quitAndInstall: (): Promise<void> => ipcRenderer.invoke('quit-and-install'),
+  onCheckingForUpdate: (callback: () => void): void => {
+    ipcRenderer.on('checking-for-update', () => callback());
+  },
   onUpdateAvailable: (callback: (info: UpdateInfoPayload) => void): void => {
     ipcRenderer.on('update-available', (_event, data: UpdateInfoPayload) => callback(data));
   },

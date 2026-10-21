@@ -192,17 +192,40 @@ class LuluaXTermApp {
   setupAutoUpdater() {
     if (!window.electronAPI) return;
 
+    if (window.electronAPI.onCheckingForUpdate) {
+      window.electronAPI.onCheckingForUpdate(() => {
+        const desc = document.getElementById('settings-update-desc');
+        if (desc) desc.textContent = 'Sedang memeriksa update di GitHub Releases...';
+      });
+    }
+
     window.electronAPI.onUpdateAvailable((info) => {
       const banner = document.getElementById('update-banner');
       const msg = document.getElementById('update-banner-msg');
-      banner.style.display = 'flex';
-      msg.innerHTML = `🚀 Pembaruan Tersedia: <strong>v${this.escapeHtml(info.version)}</strong>!`;
+      if (banner) banner.style.display = 'flex';
+      if (msg) msg.innerHTML = `🚀 Pembaruan Tersedia: <strong>v${this.escapeHtml(info.version)}</strong>!`;
       this.pendingUpdateInfo = info;
+
+      // Show top-right update badge
+      const topBadge = document.getElementById('btn-top-update-badge');
+      const badgeText = document.getElementById('top-update-badge-text');
+      if (topBadge) {
+        topBadge.style.display = 'inline-flex';
+        topBadge.className = 'btn-top-update-badge';
+      }
+      if (badgeText) {
+        badgeText.textContent = `Update v${info.version} Tersedia!`;
+      }
+
+      const desc = document.getElementById('settings-update-desc');
+      if (desc) desc.textContent = `Versi baru v${info.version} tersedia untuk diunduh.`;
     });
 
     window.electronAPI.onUpdateNotAvailable(() => {
+      const desc = document.getElementById('settings-update-desc');
+      if (desc) desc.textContent = 'Aplikasi sudah merupakan versi terbaru.';
       if (this.isManualUpdateCheck) {
-        alert('LuluaX-Term Anda sudah menggunakan versi terbaru!');
+        alert('LuluaX-Term Anda sudah menggunakan versi terbaru (v' + (this.installedVersion || '') + ')!');
         this.isManualUpdateCheck = false;
       }
     });
@@ -211,15 +234,38 @@ class LuluaXTermApp {
       const bar = document.getElementById('update-progress-bar');
       const fill = document.getElementById('update-progress-fill');
       const msg = document.getElementById('update-banner-msg');
-      bar.style.display = 'block';
-      fill.style.width = `${progress.percent}%`;
-      msg.innerHTML = `Mengunduh: <strong>${progress.percent}%</strong> (${this.formatBytes(progress.bytesPerSecond || 0)}/s)...`;
+      if (bar) bar.style.display = 'block';
+      if (fill) fill.style.width = `${progress.percent}%`;
+      if (msg) msg.innerHTML = `Mengunduh: <strong>${progress.percent}%</strong> (${this.formatBytes(progress.bytesPerSecond || 0)}/s)...`;
+
+      const topBadge = document.getElementById('btn-top-update-badge');
+      const badgeText = document.getElementById('top-update-badge-text');
+      if (topBadge) {
+        topBadge.style.display = 'inline-flex';
+        topBadge.className = 'btn-top-update-badge downloading';
+      }
+      if (badgeText) {
+        badgeText.textContent = `⬇ Mengunduh ${progress.percent}%...`;
+      }
     });
 
     window.electronAPI.onUpdateDownloaded((info) => {
-      document.getElementById('update-banner').style.display = 'none';
+      const banner = document.getElementById('update-banner');
+      if (banner) banner.style.display = 'none';
       document.getElementById('update-downloaded-version').textContent = `v${info.version}`;
       document.getElementById('update-release-notes').textContent = info.releaseNotes || 'Pembaruan stabilitas dan peningkatan performa terbaru.';
+
+      this.pendingUpdateDownloaded = true;
+      const topBadge = document.getElementById('btn-top-update-badge');
+      const badgeText = document.getElementById('top-update-badge-text');
+      if (topBadge) {
+        topBadge.style.display = 'inline-flex';
+        topBadge.className = 'btn-top-update-badge ready';
+      }
+      if (badgeText) {
+        badgeText.textContent = `🎉 Pasang v${info.version} (Restart)`;
+      }
+
       document.getElementById('modal-update-notes').classList.add('active');
     });
 
@@ -232,10 +278,27 @@ class LuluaXTermApp {
     });
   }
 
+  onUpdateBadgeClick() {
+    if (this.pendingUpdateDownloaded) {
+      document.getElementById('modal-update-notes').classList.add('active');
+    } else if (this.pendingUpdateInfo) {
+      document.getElementById('update-downloaded-version').textContent = `v${this.pendingUpdateInfo.version}`;
+      document.getElementById('update-release-notes').textContent = this.pendingUpdateInfo.releaseNotes || 'Pembaruan stabilitas dan peningkatan performa terbaru.';
+      document.getElementById('modal-update-notes').classList.add('active');
+      this.triggerDownloadUpdate();
+    } else {
+      this.manualCheckUpdate();
+    }
+  }
+
   async triggerDownloadUpdate() {
     const btn = document.getElementById('btn-download-update');
-    btn.disabled = true;
-    btn.textContent = 'Memulai Download...';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Memulai Download...';
+    }
+    const topBadgeText = document.getElementById('top-update-badge-text');
+    if (topBadgeText) topBadgeText.textContent = 'Memulai Download...';
     if (window.electronAPI) {
       await window.electronAPI.downloadUpdate();
     }
@@ -249,6 +312,8 @@ class LuluaXTermApp {
 
   async manualCheckUpdate() {
     this.isManualUpdateCheck = true;
+    const desc = document.getElementById('settings-update-desc');
+    if (desc) desc.textContent = 'Sedang memeriksa update di GitHub Releases...';
     if (window.electronAPI) {
       await window.electronAPI.checkForUpdate();
     } else {
@@ -512,6 +577,21 @@ class LuluaXTermApp {
       const res = await fetch('/api/system');
       const data = await res.json();
       if (data.success) {
+        let versionStr = '1.0.2';
+        if (window.electronAPI && window.electronAPI.getAppVersion) {
+          try {
+            versionStr = await window.electronAPI.getAppVersion();
+          } catch {}
+        } else if (data.appVersion) {
+          versionStr = data.appVersion;
+        }
+        this.installedVersion = versionStr;
+
+        // Update all elements showing installed version
+        document.querySelectorAll('.display-installed-version').forEach(el => {
+          el.textContent = `v${versionStr}`;
+        });
+
         const isMac = data.platform === 'darwin';
         const isArm = data.arch === 'arm64';
         const statusTitle = document.getElementById('sys-status-title');
@@ -519,17 +599,17 @@ class LuluaXTermApp {
         const badge = document.getElementById('app-platform-badge');
 
         if (isMac) {
-          statusTitle.textContent = isArm ? 'Apple Silicon PTY' : 'macOS PTY';
-          statusSub.textContent = isArm ? 'ARM64 (M-Series)' : 'x86_64 (Intel)';
-          badge.textContent = `macOS ${isArm ? 'Apple Silicon' : 'Intel'}`;
+          statusTitle.textContent = `v${versionStr} • ${isArm ? 'Apple Silicon' : 'Intel'}`;
+          statusSub.textContent = isArm ? 'macOS ARM64 (zsh)' : 'macOS x86_64';
+          badge.textContent = `v${versionStr} • macOS ${isArm ? 'ARM64' : 'x64'}`;
         } else if (data.platform === 'win32') {
-          statusTitle.textContent = 'ConPTY Ready';
-          statusSub.textContent = `Windows ${data.arch}`;
-          badge.textContent = `Windows ${data.arch}`;
+          statusTitle.textContent = `v${versionStr} (Installed)`;
+          statusSub.textContent = `Windows ${data.arch} • ConPTY`;
+          badge.textContent = `v${versionStr} • Windows ${data.arch}`;
         } else {
-          statusTitle.textContent = 'PTY Ready';
+          statusTitle.textContent = `v${versionStr} (Installed)`;
           statusSub.textContent = data.platformLabel;
-          badge.textContent = data.platformLabel;
+          badge.textContent = `v${versionStr} • ${data.platformLabel}`;
         }
       }
     } catch (e) {

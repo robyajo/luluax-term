@@ -1883,3 +1883,83 @@ input:checked + .slider:before {
   color: var(--text-primary);
   margin-bottom: 5px;
 }
+/* Top Nav Bar & Top-Right Update Badges */
+.top-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 36px;
+  min-height: 36px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+  gap: 12px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.top-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.badge-installed-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.badge-installed-version .version-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+.btn-top-update-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+  animation: update-pulse-anim 2s infinite ease-in-out;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-top-update-badge:hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.65);
+}
+
+.btn-top-update-badge.downloading {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
+}
+
+.btn-top-update-badge.ready {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+}
+
+@keyframes update-pulse-anim {
+  0% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 18px rgba(245, 158, 11, 0.8); }
+  100% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+}

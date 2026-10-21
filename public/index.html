@@ -41,7 +41,7 @@
         </div>
         <div class="brand-info">
           <span class="brand-name">LuluaX<span class="brand-highlight">Term</span></span>
-          <span class="brand-tag" id="app-platform-badge">v1.0 • Windows & macOS</span>
+          <span class="brand-tag" id="app-platform-badge">v1.0.2 • Windows & macOS</span>
         </div>
       </div>
 
@@ -134,6 +134,21 @@
 
     <!-- Main Content Area -->
     <main class="main-content">
+      <!-- Universal Top Status & Update Header (Termius Parity) -->
+      <div class="top-nav-bar" id="top-nav-bar">
+        <div class="top-nav-left"></div>
+        <div class="top-nav-right">
+          <div class="badge-installed-version" title="Versi LuluaX-Term yang Terpasang">
+            <span class="version-dot"></span>
+            <span class="display-installed-version" id="installed-version-val">v1.0.2</span>
+          </div>
+          <button type="button" class="btn-top-update-badge" id="btn-top-update-badge" style="display:none;" onclick="app.onUpdateBadgeClick()" title="Klik untuk mengunduh dan memasang pembaruan">
+            <span id="top-update-badge-icon">🚀</span>
+            <span id="top-update-badge-text">Update Tersedia</span>
+          </button>
+        </div>
+      </div>
+
       <!-- 1. VIEW: HOSTS -->
       <section id="view-hosts" class="view-panel active">
         <header class="panel-header">
@@ -551,6 +566,25 @@
                 <li><strong>Native Components:</strong> libssh2.dll & termius.node, node-pty (winpty-agent.exe), keytar.node</li>
                 <li><strong>LuluaX-Term Implementation:</strong> Pure JS SSH2 Client, Windows ConPTY & macOS Apple Silicon (arm64 zsh) PTY, full xterm.js terminal engine, and Vercel Cloud Sync.</li>
               </ul>
+            </div>
+          </div>
+          <div class="settings-card" id="settings-about-card">
+            <h3>Tentang LuluaX-Term & Versi Terpasang</h3>
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Versi Terpasang Saat Ini</label>
+                <p>Nomor versi rilis desktop yang sedang berjalan di komputer Anda</p>
+              </div>
+              <span class="badge-status status-2xx display-installed-version" style="font-size:13px; font-weight:700">v1.0.2</span>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Status Pembaruan (Update Channel)</label>
+                <p id="settings-update-desc">Menghubungkan ke GitHub Releases channel...</p>
+              </div>
+              <button type="button" class="btn btn-secondary" onclick="app.manualCheckUpdate()">
+                🔄 Periksa Sekarang
+              </button>
             </div>
           </div>
           <div class="settings-actions">

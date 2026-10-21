@@ -116,11 +116,22 @@ app.get('/api/system', (_req, res) => {
     else if (platform === 'linux') {
         platformLabel = `Linux (${arch})`;
     }
+    let appVersion = '1.0.2';
+    try {
+        const pkgPath = path_1.default.join(PROJECT_ROOT, 'package.json');
+        if (fs_1.default.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs_1.default.readFileSync(pkgPath, 'utf-8'));
+            if (pkg.version)
+                appVersion = pkg.version;
+        }
+    }
+    catch { }
     res.json({
         success: true,
         platform,
         arch,
         platformLabel,
+        appVersion,
         hostname: os_1.default.hostname(),
         uptime: os_1.default.uptime(),
         nodeVersion: process.version
