@@ -98,6 +98,8 @@ Jika di masa mendatang agen AI menambahkan fitur baru (misalnya: *Identity Crede
    - Tambahkan logika upsert/query di endpoint `/api/terminal/registry` dan `/api/terminal/registry/sync` pada `backend/src/modules/terminal/terminal.routes.ts`.
 4. **Perbarui UI & Sinkronisasi Real-Time**:
    - Pastikan setiap aksi simpan/ubah di UI memicu `this.triggerDebouncedSync()`.
-5. **Verifikasi Kompilasi & Lakukan Activity-Sync**:
-   - Jalankan `npm run build` di `luluax-term/` dan `npx tsc --noEmit` di `backend/`.
+5. **Wajib Perbarui `CHANGELOG.md`**:
+   - Setiap kali agen AI melakukan perubahan kode, perbaikan bug, penambahan fitur, atau rilis, AI WAJIB memperbarui berkas `CHANGELOG.md` pada aplikasi yang terdampak (`luluax-term/CHANGELOG.md`, `luluax-request/CHANGELOG.md`, atau `backend/CHANGELOG.md`) menggunakan format standar Keep a Changelog.
+6. **Verifikasi Kompilasi & Lakukan Activity-Sync**:
+   - Jalankan `npm run build` di `luluax-term/` dan `luluax-request/`, serta `npx tsc --noEmit` di `backend/`.
    - Wajib eksekusi `activity-sync` ke API portfolio (`https://ajoroby.is-a.dev/api/activities`).
